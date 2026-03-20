@@ -32,7 +32,7 @@ class PanelModel: ObservableObject, Identifiable {
     init(index: Int, id: UUID = UUID(), cells: [CellModel]? = nil) {
         self.id = id
         self.title = "Row #\(index)"
-        self.cells = cells ?? [CellModel(type: .terminal)]
+        self.cells = cells ?? [CellModel(type: .terminal), CellModel(type: .notes)]
     }
 }
 
