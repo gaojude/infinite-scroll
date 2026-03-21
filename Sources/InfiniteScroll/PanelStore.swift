@@ -8,6 +8,7 @@ class PanelStore: ObservableObject {
     @Published var showHelp: Bool = false
     private var nextIndex = 1
     private var autosaveCancellables: Set<AnyCancellable> = []
+    private var nestedCancellables: Set<AnyCancellable> = []
     private var terminationObserver: Any?
     private var clickMonitor: Any?
 
@@ -42,6 +43,11 @@ class PanelStore: ObservableObject {
             .sink { [weak self] _ in self?.save() }
             .store(in: &autosaveCancellables)
 
+        // Re-subscribe to nested changes whenever the panels array changes
+        $panels
+            .sink { [weak self] panels in self?.subscribeToNestedChanges(panels) }
+            .store(in: &autosaveCancellables)
+
         $fontSize
             .debounce(for: .seconds(2), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.save() }
@@ -54,6 +60,7 @@ class PanelStore: ObservableObject {
         ) { [weak self] _ in
             // Cancel debounced saves and force immediate save
             self?.autosaveCancellables.removeAll()
+            self?.nestedCancellables.removeAll()
             self?.save()
         }
 
@@ -274,6 +281,26 @@ class PanelStore: ObservableObject {
             TerminalViewRegistry.shared.focus(id: cell.id)
         case .notes:
             NotesViewRegistry.shared.focus(id: cell.id)
+        }
+    }
+
+    // MARK: - Nested observation
+
+    /// Subscribe to objectWillChange on each panel and its cells so that
+    /// edits to notes text (or any nested property) trigger autosave.
+    private func subscribeToNestedChanges(_ panels: [PanelModel]) {
+        nestedCancellables.removeAll()
+        for panel in panels {
+            panel.objectWillChange
+                .debounce(for: .seconds(2), scheduler: RunLoop.main)
+                .sink { [weak self] _ in self?.save() }
+                .store(in: &nestedCancellables)
+            for cell in panel.cells {
+                cell.objectWillChange
+                    .debounce(for: .seconds(2), scheduler: RunLoop.main)
+                    .sink { [weak self] _ in self?.save() }
+                    .store(in: &nestedCancellables)
+            }
         }
     }
 
