@@ -18,7 +18,7 @@ A terminal workspace manager for macOS. Organize multiple terminals in an infini
 
 ## Install
 
-Download the latest DMG from [infinitescroll.dev](https://infinitescroll.dev).
+Download the latest DMG from [infinite-scroll.dev](https://infinite-scroll.dev).
 
 Or build from source:
 
