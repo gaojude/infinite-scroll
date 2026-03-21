@@ -28,6 +28,9 @@ class PanelStore: ObservableObject {
             DispatchQueue.global(qos: .utility).async {
                 TmuxManager.cleanupOrphans(activeCellIDs: activeCellIDs)
             }
+            focusedRow = 0
+            focusedCell = 0
+            scheduleFocus()
         } else {
             print("[InfiniteScroll] No saved state found, creating fresh panel")
             addPanel()
