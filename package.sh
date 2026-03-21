@@ -17,6 +17,9 @@ mkdir -p "$APP_NAME.app/Contents/Resources"
 # Copy main binary
 cp ".build/release/$BUNDLE_NAME" "$APP_NAME.app/Contents/MacOS/$BUNDLE_NAME"
 
+# Copy app icon
+cp "Resources/AppIcon.icns" "$APP_NAME.app/Contents/Resources/AppIcon.icns"
+
 # Bundle tmux
 TMUX_BIN="$(readlink -f /opt/homebrew/bin/tmux 2>/dev/null || readlink -f /usr/local/bin/tmux 2>/dev/null || echo "")"
 if [ -z "$TMUX_BIN" ]; then
@@ -104,6 +107,8 @@ cat > "$APP_NAME.app/Contents/Info.plist" << 'PLIST'
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.developer-tools</string>
 </dict>
