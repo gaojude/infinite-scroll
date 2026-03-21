@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_NAME="Infinite Scroll"
 BUNDLE_NAME="InfiniteScroll"
-VERSION="1.0.7"
+VERSION="1.0.8"
 
 echo "=== Building release binary ==="
 swift build -c release

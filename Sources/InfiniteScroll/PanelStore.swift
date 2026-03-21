@@ -112,8 +112,10 @@ class PanelStore: ObservableObject {
     func addPanel() {
         let panel = PanelModel(index: panels.count + 1)
         nextIndex += 1
-        panels.append(panel)
-        focusedRow = panels.count - 1
+        let insertAt = min(focusedRow + 1, panels.count)
+        panels.insert(panel, at: insertAt)
+        renumberRows()
+        focusedRow = insertAt
         focusedCell = 0
         scheduleFocus()
     }
