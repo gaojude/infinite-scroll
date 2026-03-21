@@ -78,9 +78,13 @@ struct TerminalWrapper: NSViewRepresentable {
             )
             // Force tmux to redraw after reattach — fixes display corruption
             if sessionExists {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    // Send Ctrl+L to clear/redraw, then clear the screen properly
-                    termView.send(data: ArraySlice<UInt8>([0x0c])) // Ctrl+L
+                // Multiple redraws at staggered delays to catch late layout
+                for delay in [0.3, 0.8, 1.5] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak termView] in
+                        guard let tv = termView else { return }
+                        // Ctrl+L redraws the current application
+                        tv.send(data: ArraySlice<UInt8>([0x0c]))
+                    }
                 }
             }
         } else {
