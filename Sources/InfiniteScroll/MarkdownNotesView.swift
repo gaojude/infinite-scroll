@@ -9,13 +9,45 @@ enum NotesKeyMonitor {
     static func install() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // Cmd+Backspace (keyCode 51)
+            // Cmd+Backspace (keyCode 51) → delete to start of current visual line
             guard event.keyCode == 51,
                   event.modifierFlags.contains(.command),
-                  let responder = event.window?.firstResponder as? NotesTextView else {
+                  let textView = event.window?.firstResponder as? NotesTextView,
+                  let layoutManager = textView.layoutManager,
+                  let textStorage = textView.textStorage else {
                 return event
             }
-            responder.deleteToBeginningOfLine(nil)
+
+            let selected = textView.selectedRange()
+            let cursor = selected.location
+            if selected.length > 0 {
+                if textView.shouldChangeText(in: selected, replacementString: "") {
+                    textStorage.replaceCharacters(in: selected, with: "")
+                    textView.didChangeText()
+                }
+                return nil
+            }
+            guard cursor > 0 else { return nil }
+
+            let nsString = textStorage.string as NSString
+            let length = nsString.length
+            let probe = min(max(cursor - 1, 0), max(length - 1, 0))
+            let glyphIdx = layoutManager.glyphIndexForCharacter(at: probe)
+            var glyphRange = NSRange()
+            _ = layoutManager.lineFragmentRect(forGlyphAt: glyphIdx, effectiveRange: &glyphRange)
+            let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+            var lineStart = charRange.location
+
+            // Don't cross a newline: if the preceding char is a newline, stop after it.
+            let paragraphStart = nsString.paragraphRange(for: NSRange(location: cursor, length: 0)).location
+            lineStart = max(lineStart, paragraphStart)
+
+            let deleteRange = NSRange(location: lineStart, length: cursor - lineStart)
+            guard deleteRange.length > 0 else { return nil }
+            if textView.shouldChangeText(in: deleteRange, replacementString: "") {
+                textStorage.replaceCharacters(in: deleteRange, with: "")
+                textView.didChangeText()
+            }
             return nil
         }
     }
