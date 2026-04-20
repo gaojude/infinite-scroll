@@ -4,6 +4,7 @@ struct RowView: View {
     @ObservedObject var panel: PanelModel
     let index: Int
     let fontSize: CGFloat
+    let fontName: String
     let focusedCellID: UUID?
     let onClose: () -> Void
 
@@ -62,7 +63,7 @@ struct RowView: View {
                                 .fill(Theme.border)
                                 .frame(width: 1)
                         }
-                        CellView(cell: cell, fontSize: fontSize)
+                        CellView(cell: cell, fontSize: fontSize, fontName: fontName)
                             .frame(width: cellWidth(total: geo.size.width))
                             .overlay(
                                 Rectangle()
@@ -102,6 +103,7 @@ struct RowView: View {
 struct CellView: View {
     @ObservedObject var cell: CellModel
     let fontSize: CGFloat
+    let fontName: String
 
     var body: some View {
         switch cell.type {
@@ -110,6 +112,7 @@ struct CellView: View {
                 terminalID: cell.id,
                 initialDirectory: cell.cwd,
                 fontSize: fontSize,
+                fontName: fontName,
                 onExit: { _ in cell.isRunning = false },
                 onCwdChange: { cwd in cell.cwd = cwd }
             )
@@ -117,7 +120,8 @@ struct CellView: View {
             MarkdownNotesView(
                 notesID: cell.id,
                 text: $cell.text,
-                fontSize: fontSize
+                fontSize: fontSize,
+                fontName: fontName
             )
         }
     }

@@ -12,6 +12,7 @@ struct ContentView: View {
                             panel: panel,
                             index: index + 1,
                             fontSize: store.fontSize,
+                            fontName: store.fontName,
                             focusedCellID: store.focusedCellID,
                             onClose: { store.removePanel(id: panel.id) }
                         )

@@ -70,5 +70,10 @@ struct InfiniteScrollApp: App {
                 .keyboardShortcut(.rightArrow, modifiers: .command)
             }
         }
+
+        Settings {
+            SettingsView()
+                .environmentObject(store)
+        }
     }
 }

@@ -9,6 +9,7 @@ struct HelpOverlay: View {
         ("⌘ ⇧ ↓",      "New row below"),
         ("⌘ =",         "Zoom in"),
         ("⌘ -",         "Zoom out"),
+        ("⌘ ,",         "Open settings"),
         ("⌘ ↑",         "Focus row above"),
         ("⌘ ↓",         "Focus row below"),
         ("⌘ ←",         "Focus left"),

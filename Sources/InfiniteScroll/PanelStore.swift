@@ -2,8 +2,11 @@ import AppKit
 import Combine
 
 class PanelStore: ObservableObject {
+    static let defaultFontName = "Menlo"
+
     @Published var panels: [PanelModel] = []
     @Published var fontSize: CGFloat = 16
+    @Published var fontName: String = PanelStore.defaultFontName
     @Published var focusedCellID: UUID?
     @Published var showHelp: Bool = false
     private var nextIndex = 1
@@ -21,10 +24,11 @@ class PanelStore: ObservableObject {
         if let saved = saved, !saved.panels.isEmpty {
             nextIndex = saved.nextIndex
             fontSize = saved.fontSize ?? 16
+            fontName = saved.fontName ?? PanelStore.defaultFontName
             for (i, state) in saved.panels.enumerated() {
                 panels.append(PanelModel.from(state: state, index: i + 1))
             }
-            print("[InfiniteScroll] Restored \(saved.panels.count) panels, fontSize=\(fontSize)")
+            print("[InfiniteScroll] Restored \(saved.panels.count) panels, fontSize=\(fontSize), fontName=\(fontName)")
             // Clean up orphaned tmux sessions from previous runs
             let activeCellIDs = Set(panels.flatMap { $0.cells.filter { $0.type == .terminal }.map { $0.id } })
             DispatchQueue.global(qos: .utility).async {
@@ -49,6 +53,11 @@ class PanelStore: ObservableObject {
             .store(in: &autosaveCancellables)
 
         $fontSize
+            .debounce(for: .seconds(2), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.save() }
+            .store(in: &autosaveCancellables)
+
+        $fontName
             .debounce(for: .seconds(2), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.save() }
             .store(in: &autosaveCancellables)
@@ -310,7 +319,8 @@ class PanelStore: ObservableObject {
         let state = AppState(
             panels: panels.map { $0.toState() },
             nextIndex: nextIndex,
-            fontSize: fontSize
+            fontSize: fontSize,
+            fontName: fontName
         )
         PersistenceManager.save(state)
     }

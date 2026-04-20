@@ -36,4 +36,5 @@ swift build
 | `Cmd+Arrows`      | Navigate panels    |
 | `Cmd+Scroll`      | Scroll rows        |
 | `Cmd+=` / `Cmd+-` | Zoom in/out        |
+| `Cmd+,`           | Settings           |
 | `Cmd+/`           | Show help          |

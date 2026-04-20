@@ -57,6 +57,7 @@ struct MarkdownNotesView: NSViewRepresentable {
     let notesID: UUID
     @Binding var text: String
     var fontSize: CGFloat
+    var fontName: String
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -81,7 +82,9 @@ struct MarkdownNotesView: NSViewRepresentable {
         ]
 
         // Monospaced font
-        textView.font = NSFont(name: "Menlo", size: fontSize) ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        textView.font = NSFont(name: fontName, size: fontSize)
+            ?? NSFont(name: "Menlo", size: fontSize)
+            ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         if let font = textView.font, let color = textView.textColor {
             textView.typingAttributes = [.font: font, .foregroundColor: color]
         }
@@ -117,8 +120,10 @@ struct MarkdownNotesView: NSViewRepresentable {
             textView.string = text
             textView.setSelectedRange(selection)
         }
-        let font = NSFont(name: "Menlo", size: fontSize) ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        if textView.font?.pointSize != fontSize {
+        let font = NSFont(name: fontName, size: fontSize)
+            ?? NSFont(name: "Menlo", size: fontSize)
+            ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        if textView.font?.pointSize != fontSize || textView.font?.fontName != font.fontName {
             textView.font = font
             if let color = textView.textColor {
                 textView.typingAttributes = [.font: font, .foregroundColor: color]

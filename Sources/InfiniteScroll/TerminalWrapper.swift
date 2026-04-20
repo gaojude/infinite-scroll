@@ -87,6 +87,7 @@ struct TerminalWrapper: NSViewRepresentable {
     let terminalID: UUID
     let initialDirectory: String
     let fontSize: CGFloat
+    let fontName: String
     let onExit: (Int32) -> Void
     let onCwdChange: (String) -> Void
 
@@ -101,9 +102,9 @@ struct TerminalWrapper: NSViewRepresentable {
         termView.nativeBackgroundColor = bgColor
         termView.nativeForegroundColor = fgColor
 
-        if let font = NSFont(name: "Menlo", size: fontSize) ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular) as NSFont? {
-            termView.font = font
-        }
+        termView.font = NSFont(name: fontName, size: fontSize)
+            ?? NSFont(name: "Menlo", size: fontSize)
+            ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
 
         context.coordinator.termView = termView
         termView.processDelegate = context.coordinator
@@ -160,8 +161,10 @@ struct TerminalWrapper: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
-        let font = NSFont(name: "Menlo", size: fontSize) ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        if nsView.font.pointSize != fontSize {
+        let font = NSFont(name: fontName, size: fontSize)
+            ?? NSFont(name: "Menlo", size: fontSize)
+            ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        if nsView.font.pointSize != fontSize || nsView.font.fontName != font.fontName {
             nsView.font = font
         }
     }

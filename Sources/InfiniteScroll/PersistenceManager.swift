@@ -4,6 +4,7 @@ struct AppState: Codable {
     let panels: [PanelState]
     let nextIndex: Int
     let fontSize: CGFloat?
+    let fontName: String?
 }
 
 enum PersistenceManager {
