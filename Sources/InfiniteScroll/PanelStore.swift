@@ -3,10 +3,14 @@ import Combine
 
 class PanelStore: ObservableObject {
     static let defaultFontName = "Menlo"
+    static let defaultRowHeight: CGFloat = 750
+    static let minRowHeight: CGFloat = 200
+    static let maxRowHeight: CGFloat = 2000
 
     @Published var panels: [PanelModel] = []
     @Published var fontSize: CGFloat = 16
     @Published var fontName: String = PanelStore.defaultFontName
+    @Published var rowHeight: CGFloat = PanelStore.defaultRowHeight
     @Published var focusedCellID: UUID?
     @Published var showHelp: Bool = false
     private var nextIndex = 1
@@ -25,6 +29,7 @@ class PanelStore: ObservableObject {
             nextIndex = saved.nextIndex
             fontSize = saved.fontSize ?? 16
             fontName = saved.fontName ?? PanelStore.defaultFontName
+            rowHeight = saved.rowHeight ?? PanelStore.defaultRowHeight
             for (i, state) in saved.panels.enumerated() {
                 panels.append(PanelModel.from(state: state, index: i + 1))
             }
@@ -58,6 +63,11 @@ class PanelStore: ObservableObject {
             .store(in: &autosaveCancellables)
 
         $fontName
+            .debounce(for: .seconds(2), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.save() }
+            .store(in: &autosaveCancellables)
+
+        $rowHeight
             .debounce(for: .seconds(2), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.save() }
             .store(in: &autosaveCancellables)
@@ -320,7 +330,8 @@ class PanelStore: ObservableObject {
             panels: panels.map { $0.toState() },
             nextIndex: nextIndex,
             fontSize: fontSize,
-            fontName: fontName
+            fontName: fontName,
+            rowHeight: rowHeight
         )
         PersistenceManager.save(state)
     }

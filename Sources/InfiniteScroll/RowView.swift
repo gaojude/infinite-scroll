@@ -5,6 +5,7 @@ struct RowView: View {
     let index: Int
     let fontSize: CGFloat
     let fontName: String
+    let rowHeight: CGFloat
     let focusedCellID: UUID?
     let onClose: () -> Void
 
@@ -75,9 +76,9 @@ struct RowView: View {
                     }
                 }
             }
-            .frame(height: Theme.panelHeight - Theme.headerHeight)
+            .frame(height: rowHeight - Theme.headerHeight)
         }
-        .frame(height: Theme.panelHeight)
+        .frame(height: rowHeight)
         .clipShape(RoundedRectangle(cornerRadius: Theme.panelCornerRadius))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.panelCornerRadius)

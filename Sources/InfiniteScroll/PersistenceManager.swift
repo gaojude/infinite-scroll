@@ -5,6 +5,7 @@ struct AppState: Codable {
     let nextIndex: Int
     let fontSize: CGFloat?
     let fontName: String?
+    let rowHeight: CGFloat?
 }
 
 enum PersistenceManager {

@@ -19,9 +19,25 @@ struct SettingsView: View {
                     Text("Size: \(Int(store.fontSize))pt")
                 }
             }
+
+            Section("Layout") {
+                Stepper(
+                    value: $store.rowHeight,
+                    in: PanelStore.minRowHeight...PanelStore.maxRowHeight,
+                    step: 25
+                ) {
+                    Text("Row height: \(Int(store.rowHeight))px")
+                }
+
+                Slider(
+                    value: $store.rowHeight,
+                    in: PanelStore.minRowHeight...PanelStore.maxRowHeight,
+                    step: 25
+                )
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 180)
+        .frame(width: 420, height: 280)
     }
 
     private static let monospacedFonts: [String] = {
