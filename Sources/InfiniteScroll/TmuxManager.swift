@@ -2,42 +2,65 @@ import Foundation
 
 enum TmuxManager {
     static let prefix = "is-"
+    private static let cacheLock = NSLock()
     private static var _cachedPath: String?
     private static var _checked = false
 
-    /// Find a working tmux binary — verifies it actually runs
+    /// Resolve the tmux path on a background queue and cache it. Safe to call
+    /// from anywhere (idempotent, locked). Call early in app launch so that
+    /// `cachedTmuxPath()` returns a value by the time a terminal is mounted.
+    static func prewarm() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = findTmux()
+        }
+    }
+
+    /// Non-blocking accessor — returns the cached path if resolved, else nil.
+    /// Use this on the main thread (e.g. inside `makeNSView`) to avoid
+    /// spinning a nested run loop during SwiftUI layout.
+    static func cachedTmuxPath() -> String? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return _checked ? _cachedPath : nil
+    }
+
+    /// Find a working tmux binary — verifies it actually runs.
+    /// Blocks the calling thread; do not call from the main thread.
+    @discardableResult
     static func findTmux() -> String? {
-        if _checked { return _cachedPath }
-        _checked = true
+        cacheLock.lock()
+        if _checked {
+            let cached = _cachedPath
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
 
         let candidates = [
             "/opt/homebrew/bin/tmux",
             "/usr/local/bin/tmux",
             "/usr/bin/tmux",
         ]
-
-        // Also check bundled
+        var searchPaths = candidates
         if let bundlePath = Bundle.main.executableURL?
             .deletingLastPathComponent()
             .appendingPathComponent("tmux").path {
-            // Try system first, then bundled
-            for path in candidates + [bundlePath] {
-                if FileManager.default.isExecutableFile(atPath: path) && verifyTmux(path) {
-                    _cachedPath = path
-                    return path
-                }
-            }
-        } else {
-            for path in candidates {
-                if FileManager.default.isExecutableFile(atPath: path) && verifyTmux(path) {
-                    _cachedPath = path
-                    return path
-                }
+            searchPaths.append(bundlePath)
+        }
+
+        var resolved: String?
+        for path in searchPaths {
+            if FileManager.default.isExecutableFile(atPath: path) && verifyTmux(path) {
+                resolved = path
+                break
             }
         }
 
-        _cachedPath = nil
-        return nil
+        cacheLock.lock()
+        _cachedPath = resolved
+        _checked = true
+        cacheLock.unlock()
+        return resolved
     }
 
     /// Actually run `tmux -V` to verify it works (dylibs load, etc.)

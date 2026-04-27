@@ -114,16 +114,10 @@ struct TerminalWrapper: NSViewRepresentable {
 
         // Use tmux if available for session persistence
         let sessionName = TmuxManager.sessionName(for: terminalID)
-        if let tmuxPath = TmuxManager.findTmux() {
-            let sessionExists = TmuxManager.sessionExists(sessionName)
-            // `new-session -A` attaches if exists, creates if not
-            // `-c dir` sets the working directory for new sessions only
-            // -A: attach if exists, create if not
-            // -D: detach other clients (from previous app run)
-            var args = ["new-session", "-A", "-D", "-s", sessionName]
-            if !sessionExists {
-                args += ["-c", initialDirectory]
-            }
+        if let tmuxPath = TmuxManager.cachedTmuxPath() {
+            // -A: attach if exists, create if not. -c is honored only on create.
+            // -D: detach other clients (from previous app run).
+            let args = ["new-session", "-A", "-D", "-s", sessionName, "-c", initialDirectory]
             context.coordinator.isTmux = true
             termView.startProcess(
                 executable: tmuxPath,
@@ -131,15 +125,12 @@ struct TerminalWrapper: NSViewRepresentable {
                 environment: envPairs,
                 execName: "tmux"
             )
-            // Configure tmux for mouse scrolling and extended key passthrough
-            TmuxManager.configureGlobals()
+            DispatchQueue.global(qos: .userInitiated).async {
+                TmuxManager.configureGlobals()
+            }
             TerminalViewRegistry.shared.register(id: terminalID, view: termView, tmuxSession: sessionName)
-            // Force tmux to redraw after reattach — fixes display corruption
-            if sessionExists {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    // Send Ctrl+L to clear/redraw, then clear the screen properly
-                    termView.send(data: ArraySlice<UInt8>([0x0c])) // Ctrl+L
-                }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                termView.send(data: ArraySlice<UInt8>([0x0c])) // Ctrl+L
             }
         } else {
             // Fallback: plain zsh
@@ -176,10 +167,11 @@ struct TerminalWrapper: NSViewRepresentable {
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {
         coordinator.stopCwdPolling()
         TerminalViewRegistry.shared.unregister(id: coordinator.terminalID)
-        // Detach from tmux (don't kill the session — it persists)
-        // Send tmux detach: Ctrl+B, d
-        let detachSeq: [UInt8] = [0x02, 0x64] // Ctrl+B, d
-        nsView.send(data: ArraySlice(detachSeq))
+        if coordinator.isTmux {
+            // Detach from tmux (don't kill the session — it persists). Ctrl+B, d.
+            let detachSeq: [UInt8] = [0x02, 0x64]
+            nsView.send(data: ArraySlice(detachSeq))
+        }
     }
 
     class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
