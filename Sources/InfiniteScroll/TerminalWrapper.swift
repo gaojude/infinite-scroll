@@ -81,6 +81,53 @@ enum CmdBackspaceMonitor {
     }
 }
 
+// MARK: - Cmd+, → open Settings (SwiftTerm eats Cmd-modified keys before menus)
+
+enum CmdCommaMonitor {
+    private static var monitor: Any?
+
+    static func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.charactersIgnoringModifiers == ",",
+                  event.modifierFlags.contains(.command),
+                  !event.modifierFlags.contains(.shift),
+                  !event.modifierFlags.contains(.control),
+                  !event.modifierFlags.contains(.option) else {
+                return event
+            }
+            if openSettings() { return nil }
+            return event
+        }
+    }
+
+    /// Opens the Settings window. SwiftUI's Settings scene wires its menu item via
+    /// internal selectors that aren't always reachable via NSApp.sendAction, so we
+    /// walk the main menu to find the Cmd+, item and perform its action directly.
+    private static func openSettings() -> Bool {
+        guard let mainMenu = NSApp.mainMenu else { return false }
+        for topItem in mainMenu.items {
+            guard let submenu = topItem.submenu else { continue }
+            for (index, item) in submenu.items.enumerated() {
+                if item.keyEquivalent == ",",
+                   item.keyEquivalentModifierMask == .command,
+                   item.isEnabled {
+                    submenu.performActionForItem(at: index)
+                    return true
+                }
+            }
+        }
+        // Fallbacks if no menu item exists yet
+        if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
+            return true
+        }
+        if NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil) {
+            return true
+        }
+        return false
+    }
+}
+
 // MARK: - TerminalWrapper
 
 struct TerminalWrapper: NSViewRepresentable {
@@ -147,6 +194,7 @@ struct TerminalWrapper: NSViewRepresentable {
         context.coordinator.startCwdPolling()
         ShiftEnterMonitor.install()
         CmdBackspaceMonitor.install()
+        CmdCommaMonitor.install()
 
         return termView
     }

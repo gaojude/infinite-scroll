@@ -5,7 +5,7 @@ class PanelStore: ObservableObject {
     static let defaultFontName = "Menlo"
     static let defaultRowHeight: CGFloat = 750
     static let minRowHeight: CGFloat = 200
-    static let maxRowHeight: CGFloat = 2000
+    static let maxRowHeight: CGFloat = 4000
 
     @Published var panels: [PanelModel] = []
     @Published var fontSize: CGFloat = 16
