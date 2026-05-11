@@ -34,6 +34,12 @@ struct InfiniteScrollApp: App {
                 }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .shift])
             }
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                Button("Copy CLI Prompt") {
+                    CLIPromptCopier.copyToPasteboard()
+                }
+            }
             CommandGroup(replacing: .help) {
                 Button("Keyboard Shortcuts") {
                     store.showHelp.toggle()

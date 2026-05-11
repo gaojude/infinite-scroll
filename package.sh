@@ -3,9 +3,16 @@ set -euo pipefail
 
 APP_NAME="Infinite Scroll"
 BUNDLE_NAME="InfiniteScroll"
-VERSION="1.0.17"
+VERSION="1.0.19"
 
 echo "=== Building release binary ==="
+# Stamp CLI version (auto-restored on exit so source tree stays clean)
+CLI_VERSION_FILE="Sources/InfiniteScrollCLI/main.swift"
+restore_cli_version() {
+    sed -i '' "s/infinite-scroll CLI $VERSION\"/infinite-scroll CLI CLI_VERSION_PLACEHOLDER\"/g" "$CLI_VERSION_FILE"
+}
+trap restore_cli_version EXIT
+sed -i '' "s/CLI_VERSION_PLACEHOLDER/$VERSION/g" "$CLI_VERSION_FILE"
 swift build -c release
 
 echo "=== Creating .app bundle ==="
@@ -17,8 +24,15 @@ mkdir -p "$APP_NAME.app/Contents/Resources"
 # Copy main binary
 cp ".build/release/$BUNDLE_NAME" "$APP_NAME.app/Contents/MacOS/$BUNDLE_NAME"
 
+# Copy CLI binary
+cp ".build/release/infinite-scroll" "$APP_NAME.app/Contents/MacOS/infinite-scroll"
+chmod +x "$APP_NAME.app/Contents/MacOS/infinite-scroll"
+
 # Copy app icon
 cp "Resources/AppIcon.icns" "$APP_NAME.app/Contents/Resources/AppIcon.icns"
+
+# Copy bundled CLI prompt (read by the "Copy CLI Prompt" menu item)
+cp "Resources/cli-prompt.md" "$APP_NAME.app/Contents/Resources/cli-prompt.md"
 
 # Bundle tmux
 TMUX_BIN="$(readlink -f /opt/homebrew/bin/tmux 2>/dev/null || readlink -f /usr/local/bin/tmux 2>/dev/null || echo "")"
@@ -115,6 +129,9 @@ cat > "$APP_NAME.app/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 sed -i '' "s/VERSION_PLACEHOLDER/$VERSION/g" "$APP_NAME.app/Contents/Info.plist"
+
+# Sign the CLI binary
+codesign --force --sign - "$APP_NAME.app/Contents/MacOS/infinite-scroll"
 
 # Sign the whole .app bundle
 echo "=== Signing app bundle ==="

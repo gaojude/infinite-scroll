@@ -35,19 +35,27 @@ struct RowView: View {
                     if hovering { NSCursor.arrow.push() } else { NSCursor.pop() }
                 }
 
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
+                if panel.isMaster {
+                    Image(systemName: "lock.fill")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(Theme.textSecondary)
                         .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in
-                    if hovering {
-                        NSCursor.arrow.push()
-                    } else {
-                        NSCursor.pop()
+                        .help("Master row — cannot be closed or controlled by the CLI")
+                } else {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(Theme.textSecondary)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hovering in
+                        if hovering {
+                            NSCursor.arrow.push()
+                        } else {
+                            NSCursor.pop()
+                        }
                     }
                 }
             }

@@ -31,11 +31,15 @@ class PanelModel: ObservableObject, Identifiable {
     /// Persisted notes content — survives toggling notes off/on.
     @Published var notesText: String
     @Published var showNotes: Bool
+    /// True for the orchestrator row at index 0. The master is protected
+    /// from CLI mutations and cannot be removed.
+    let isMaster: Bool
 
     init(index: Int, id: UUID = UUID(), cells: [CellModel]? = nil,
-         notesText: String = "", showNotes: Bool = false) {
+         notesText: String = "", showNotes: Bool = false, isMaster: Bool = false) {
         self.id = id
-        self.title = "Row #\(index)"
+        self.isMaster = isMaster
+        self.title = isMaster ? "Master · Row #0" : "Row #\(index)"
         self.notesText = notesText
         self.showNotes = showNotes
         if let cells = cells {
@@ -80,6 +84,7 @@ struct PanelState: Codable {
     let cells: [CellState]?
     let notesText: String?
     let showNotes: Bool?
+    let isMaster: Bool?
     // Backward compat
     let cwd: String?
     let notes: String?
@@ -120,6 +125,7 @@ extension PanelModel {
             cells: cells.map { $0.toState() },
             notesText: currentNotesText,
             showNotes: showNotes,
+            isMaster: isMaster,
             cwd: nil,
             notes: nil
         )
@@ -136,14 +142,19 @@ extension PanelModel {
             // Backward compat: old format had cwd + notes
             cells = [CellModel(type: .terminal, cwd: state.cwd)]
         }
+        let isMaster = state.isMaster ?? false
         let model = PanelModel(
             index: index,
             id: UUID(uuidString: state.id) ?? UUID(),
             cells: cells,
             notesText: state.notesText ?? state.notes ?? "",
-            showNotes: state.showNotes ?? false
+            showNotes: state.showNotes ?? false,
+            isMaster: isMaster
         )
-        model.title = state.title
+        // Trust the saved title only for non-master rows; master title is canonical.
+        if !isMaster {
+            model.title = state.title
+        }
         return model
     }
 }

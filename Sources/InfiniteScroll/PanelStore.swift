@@ -23,10 +23,11 @@ class PanelStore: ObservableObject {
     private var nestedCancellables: Set<AnyCancellable> = []
     private var terminationObserver: Any?
     private var clickMonitor: Any?
+    private var cliServer: CLIServer?
 
     // Focus tracking: row index + cell index within that row
-    private(set) var focusedRow: Int = 0
-    private(set) var focusedCell: Int = 0
+    var focusedRow: Int = 0
+    var focusedCell: Int = 0
 
     init() {
         let saved = PersistenceManager.load()
@@ -39,19 +40,24 @@ class PanelStore: ObservableObject {
                 : PanelStore.defaultFontName
             rowHeight = saved.rowHeight ?? PanelStore.defaultRowHeight
             for (i, state) in saved.panels.enumerated() {
-                panels.append(PanelModel.from(state: state, index: i + 1))
+                panels.append(PanelModel.from(state: state, index: i))
             }
+            ensureMasterRow()
+            renumberRows()
             print("[InfiniteScroll] Restored \(saved.panels.count) panels, fontSize=\(fontSize), fontName=\(fontName)")
             // Clean up orphaned tmux sessions from previous runs
             let activeCellIDs = Set(panels.flatMap { $0.cells.filter { $0.type == .terminal }.map { $0.id } })
             DispatchQueue.global(qos: .utility).async {
                 TmuxManager.cleanupOrphans(activeCellIDs: activeCellIDs)
             }
-            focusedRow = 0
+            // Default focus to first worker row, not the master
+            focusedRow = panels.count > 1 ? 1 : 0
             focusedCell = 0
             scheduleFocus()
         } else {
-            print("[InfiniteScroll] No saved state found, creating fresh panel")
+            print("[InfiniteScroll] No saved state found, creating fresh panels")
+            // Master row first, then one worker row
+            panels.append(PanelModel(index: 0, isMaster: true))
             addPanel()
         }
 
@@ -98,6 +104,10 @@ class PanelStore: ObservableObject {
             }
             return event
         }
+
+        // Boot the CLI IPC server so external agents can drive the app.
+        cliServer = CLIServer(store: self)
+        cliServer?.start()
     }
 
     deinit {
@@ -143,10 +153,29 @@ class PanelStore: ObservableObject {
 
     // MARK: - Row operations
 
+    /// Ensure exactly one master row exists at index 0. Demotes any extras to workers.
+    private func ensureMasterRow() {
+        // Demote duplicates (shouldn't happen, defensive)
+        var foundMaster = false
+        for panel in panels {
+            if panel.isMaster {
+                if foundMaster {
+                    // Can't unset isMaster (it's a let). Just leave it; renumber will hide it.
+                }
+                foundMaster = true
+            }
+        }
+        if panels.first?.isMaster == true { return }
+        // No master at index 0 — create one
+        panels.insert(PanelModel(index: 0, isMaster: true), at: 0)
+    }
+
     func addPanel() {
-        let panel = PanelModel(index: panels.count + 1)
+        let panel = PanelModel(index: panels.count)
         nextIndex += 1
-        let insertAt = min(focusedRow + 1, panels.count)
+        // Never insert before the master row at index 0
+        let proposed = focusedRow + 1
+        let insertAt = max(1, min(proposed, panels.count))
         panels.insert(panel, at: insertAt)
         renumberRows()
         focusedRow = insertAt
@@ -155,20 +184,18 @@ class PanelStore: ObservableObject {
     }
 
     func removePanel(id: UUID) {
-        // Kill tmux sessions for all terminal cells in this row
-        if let panel = panels.first(where: { $0.id == id }) {
-            for cell in panel.cells where cell.type == .terminal {
-                let sessionName = TmuxManager.sessionName(for: cell.id)
-                DispatchQueue.global(qos: .utility).async {
-                    TmuxManager.killSession(sessionName)
-                }
+        guard let panel = panels.first(where: { $0.id == id }) else { return }
+        // Master row cannot be removed.
+        if panel.isMaster { return }
+
+        for cell in panel.cells where cell.type == .terminal {
+            let sessionName = TmuxManager.sessionName(for: cell.id)
+            DispatchQueue.global(qos: .utility).async {
+                TmuxManager.killSession(sessionName)
             }
         }
         panels.removeAll { $0.id == id }
-        if panels.isEmpty {
-            save()
-            NSApplication.shared.terminate(nil)
-        }
+        // Master always remains, so panels is never empty here. Don't terminate.
         focusedRow = min(focusedRow, max(panels.count - 1, 0))
         clampCell()
         renumberRows()
@@ -176,7 +203,11 @@ class PanelStore: ObservableObject {
 
     private func renumberRows() {
         for (i, panel) in panels.enumerated() {
-            panel.title = "Row #\(i + 1)"
+            if panel.isMaster {
+                panel.title = "Master · Row #0"
+            } else {
+                panel.title = "Row #\(i)"
+            }
         }
     }
 
@@ -217,6 +248,12 @@ class PanelStore: ObservableObject {
         guard focusedRow < panels.count else { return }
         let panel = panels[focusedRow]
         guard focusedCell < panel.cells.count else { return }
+
+        // Master row must always retain its last terminal cell.
+        if panel.isMaster && panel.cells.count <= 1 {
+            NSSound.beep()
+            return
+        }
 
         let cell = panel.cells[focusedCell]
         // Kill tmux session when explicitly closing a terminal cell

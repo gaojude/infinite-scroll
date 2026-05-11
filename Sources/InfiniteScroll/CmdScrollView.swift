@@ -41,6 +41,13 @@ class CmdNSScrollView: NSScrollView {
 
                         if let session = TerminalViewRegistry.shared.tmuxSession(for: termView) {
                             // tmux-backed: use tmux copy-mode scrolling.
+                            // TODO(ux): scrolling enters tmux copy-mode, so the user
+                            // must press Esc before typing again. Making any key
+                            // cancel-and-forward requires either a custom copy-mode
+                            // key table (overhauls tmux's bindings) or a per-cell
+                            // "scrolled" flag + AppKit key monitor that prepends
+                            // `send-keys -X cancel`. Skipped per task 5.2; the CLI
+                            // silent-drop path is handled in CLIServer's send handler.
                             let lineHeight: CGFloat = 16
                             let lines = max(1, Int(abs(delta) / lineHeight))
                             let cmd = delta > 0 ? "scroll-up" : "scroll-down"

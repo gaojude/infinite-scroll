@@ -8,10 +8,19 @@ let package = Package(
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.0"),
     ],
     targets: [
+        .target(
+            name: "InfiniteScrollProtocol",
+            path: "Sources/InfiniteScrollProtocol"
+        ),
         .executableTarget(
             name: "InfiniteScroll",
-            dependencies: ["SwiftTerm"],
+            dependencies: ["SwiftTerm", "InfiniteScrollProtocol"],
             path: "Sources/InfiniteScroll"
+        ),
+        .executableTarget(
+            name: "infinite-scroll",
+            dependencies: ["InfiniteScrollProtocol"],
+            path: "Sources/InfiniteScrollCLI"
         ),
     ]
 )
