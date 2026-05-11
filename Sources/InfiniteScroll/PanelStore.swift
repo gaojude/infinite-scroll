@@ -2,8 +2,13 @@ import AppKit
 import Combine
 
 class PanelStore: ObservableObject {
-    static let defaultFontName = "Menlo"
+    static let defaultFontName = "Menlo-Regular"
     static let defaultRowHeight: CGFloat = 750
+
+    static let availableMonospacedFonts: [String] = {
+        let names = NSFontManager.shared.availableFontNames(with: .fixedPitchFontMask) ?? []
+        return names.filter { !$0.hasPrefix(".") }.sorted { $0.lowercased() < $1.lowercased() }
+    }()
     static let minRowHeight: CGFloat = 200
     static let maxRowHeight: CGFloat = 2000
 
@@ -28,7 +33,10 @@ class PanelStore: ObservableObject {
         if let saved = saved, !saved.panels.isEmpty {
             nextIndex = saved.nextIndex
             fontSize = saved.fontSize ?? 16
-            fontName = saved.fontName ?? PanelStore.defaultFontName
+            let candidate = saved.fontName ?? PanelStore.defaultFontName
+            fontName = PanelStore.availableMonospacedFonts.contains(candidate)
+                ? candidate
+                : PanelStore.defaultFontName
             rowHeight = saved.rowHeight ?? PanelStore.defaultRowHeight
             for (i, state) in saved.panels.enumerated() {
                 panels.append(PanelModel.from(state: state, index: i + 1))

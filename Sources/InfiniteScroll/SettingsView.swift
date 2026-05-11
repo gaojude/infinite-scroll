@@ -8,7 +8,7 @@ struct SettingsView: View {
         Form {
             Section("Appearance") {
                 Picker("Font", selection: $store.fontName) {
-                    ForEach(SettingsView.monospacedFonts, id: \.self) { name in
+                    ForEach(PanelStore.availableMonospacedFonts, id: \.self) { name in
                         Text(name)
                             .font(.custom(name, size: 13))
                             .tag(name)
@@ -39,10 +39,4 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 420, height: 280)
     }
-
-    private static let monospacedFonts: [String] = {
-        let names = NSFontManager.shared.availableFontNames(with: .fixedPitchFontMask) ?? []
-        // Strip hidden system fonts (leading dot) and sort case-insensitively.
-        return names.filter { !$0.hasPrefix(".") }.sorted { $0.lowercased() < $1.lowercased() }
-    }()
 }
