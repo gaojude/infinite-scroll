@@ -10,7 +10,7 @@ class PanelStore: ObservableObject {
         return names.filter { !$0.hasPrefix(".") }.sorted { $0.lowercased() < $1.lowercased() }
     }()
     static let minRowHeight: CGFloat = 200
-    static let maxRowHeight: CGFloat = 2000
+    static let maxRowHeight: CGFloat = 4000
 
     @Published var panels: [PanelModel] = []
     @Published var fontSize: CGFloat = 16
