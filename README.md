@@ -30,7 +30,8 @@ swift build
 
 | Key               | Action             |
 | ----------------- | ------------------ |
-| `Cmd+Shift+Down`  | New row            |
+| `Cmd+Shift+Up`    | New row above      |
+| `Cmd+Shift+Down`  | New row below      |
 | `Cmd+D`           | Duplicate cell     |
 | `Cmd+W`           | Close cell         |
 | `Cmd+Arrows`      | Navigate panels    |
