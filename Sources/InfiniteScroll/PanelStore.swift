@@ -18,12 +18,15 @@ class PanelStore: ObservableObject {
     @Published var rowHeight: CGFloat = PanelStore.defaultRowHeight
     @Published var focusedCellID: UUID?
     @Published var showHelp: Bool = false
+    @Published private(set) var newlyAddedPanelID: UUID?
     private var nextIndex = 1
     private var autosaveCancellables: Set<AnyCancellable> = []
     private var nestedCancellables: Set<AnyCancellable> = []
     private var terminationObserver: Any?
     private var clickMonitor: Any?
+    private var navigationMonitor: Any?
     private var cliServer: CLIServer?
+    private var insertionFeedbackWorkItem: DispatchWorkItem?
 
     // Focus tracking: row index + cell index within that row
     var focusedRow: Int = 0
@@ -32,7 +35,7 @@ class PanelStore: ObservableObject {
     init() {
         let saved = PersistenceManager.load()
         if let saved = saved, !saved.panels.isEmpty {
-            nextIndex = saved.nextIndex
+            nextIndex = max(saved.nextIndex, 1)
             fontSize = saved.fontSize ?? 16
             let candidate = saved.fontName ?? PanelStore.defaultFontName
             fontName = PanelStore.availableMonospacedFonts.contains(candidate)
@@ -43,7 +46,7 @@ class PanelStore: ObservableObject {
                 panels.append(PanelModel.from(state: state, index: i))
             }
             ensureMasterRow()
-            renumberRows()
+            normalizeMasterTitle()
             print("[InfiniteScroll] Restored \(saved.panels.count) panels, fontSize=\(fontSize), fontName=\(fontName)")
             // Clean up orphaned tmux sessions from previous runs
             let activeCellIDs = Set(panels.flatMap { $0.cells.filter { $0.type == .terminal }.map { $0.id } })
@@ -105,6 +108,30 @@ class PanelStore: ObservableObject {
             return event
         }
 
+        // SwiftTerm can consume Command-modified arrow keys before SwiftUI's
+        // menu shortcuts see them. Handle row navigation at the AppKit event
+        // boundary so the same shortcut works from terminals and notes.
+        navigationMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard modifiers.contains(.command),
+                  !modifiers.contains(.shift),
+                  !modifiers.contains(.control),
+                  !modifiers.contains(.option) else {
+                return event
+            }
+
+            switch event.keyCode {
+            case 126: // Up Arrow
+                self?.focusUp()
+                return nil
+            case 125: // Down Arrow
+                self?.focusDown()
+                return nil
+            default:
+                return event
+            }
+        }
+
         // Boot the CLI IPC server so external agents can drive the app.
         cliServer = CLIServer(store: self)
         cliServer?.start()
@@ -115,6 +142,9 @@ class PanelStore: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         if let monitor = clickMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = navigationMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }
@@ -171,13 +201,13 @@ class PanelStore: ObservableObject {
     }
 
     func addPanel() {
-        let panel = PanelModel(index: panels.count)
+        let panel = PanelModel(index: nextIndex)
         nextIndex += 1
         // Never insert before the master row at index 0
         let proposed = focusedRow + 1
         let insertAt = max(1, min(proposed, panels.count))
         panels.insert(panel, at: insertAt)
-        renumberRows()
+        showInsertionFeedback(for: panel.id)
         focusedRow = insertAt
         focusedCell = 0
         scheduleFocus()
@@ -198,17 +228,25 @@ class PanelStore: ObservableObject {
         // Master always remains, so panels is never empty here. Don't terminate.
         focusedRow = min(focusedRow, max(panels.count - 1, 0))
         clampCell()
-        renumberRows()
     }
 
-    private func renumberRows() {
-        for (i, panel) in panels.enumerated() {
-            if panel.isMaster {
-                panel.title = "Master · Row #0"
-            } else {
-                panel.title = "Row #\(i)"
-            }
+    /// The master title is structural; worker titles are stable workspace labels
+    /// and must not change when rows are inserted or removed around them.
+    private func normalizeMasterTitle() {
+        if let master = panels.first, master.isMaster {
+            master.title = "Master · Row #0"
         }
+    }
+
+    private func showInsertionFeedback(for panelID: UUID) {
+        insertionFeedbackWorkItem?.cancel()
+        newlyAddedPanelID = panelID
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.newlyAddedPanelID = nil
+        }
+        insertionFeedbackWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: workItem)
     }
 
     // MARK: - Cell operations
@@ -289,15 +327,25 @@ class PanelStore: ObservableObject {
     // MARK: - Focus navigation
 
     func focusUp() {
-        guard panels.count > 1 else { return }
-        focusedRow = (focusedRow - 1 + panels.count) % panels.count
+        syncFocusFromFirstResponder()
+        guard let row = RowFocusNavigation.adjacentRow(
+            from: focusedRow,
+            rowCount: panels.count,
+            direction: .up
+        ) else { return }
+        focusedRow = row
         clampCell()
         applyFocus()
     }
 
     func focusDown() {
-        guard panels.count > 1 else { return }
-        focusedRow = (focusedRow + 1) % panels.count
+        syncFocusFromFirstResponder()
+        guard let row = RowFocusNavigation.adjacentRow(
+            from: focusedRow,
+            rowCount: panels.count,
+            direction: .down
+        ) else { return }
+        focusedRow = row
         clampCell()
         applyFocus()
     }

@@ -2,11 +2,11 @@ import SwiftUI
 
 struct RowView: View {
     @ObservedObject var panel: PanelModel
-    let index: Int
     let fontSize: CGFloat
     let fontName: String
     let rowHeight: CGFloat
     let focusedCellID: UUID?
+    let isNewlyInserted: Bool
     let onClose: () -> Void
 
     var body: some View {
@@ -20,6 +20,16 @@ struct RowView: View {
                 Text(panel.title)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundColor(Theme.text)
+
+                if isNewlyInserted {
+                    Text("NEW")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(Theme.accent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Theme.accent.opacity(0.14), in: Capsule())
+                        .transition(.opacity)
+                }
 
                 Spacer()
 
@@ -61,7 +71,7 @@ struct RowView: View {
             }
             .padding(.horizontal, 12)
             .frame(height: Theme.headerHeight)
-            .background(Theme.headerBackground)
+            .background(panel.isMaster ? Theme.masterHeaderBackground : Theme.headerBackground)
 
             // Dynamic cells — equal width
             GeometryReader { geo in
@@ -90,8 +100,13 @@ struct RowView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.panelCornerRadius))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.panelCornerRadius)
-                .stroke(Theme.border, lineWidth: 1)
+                .stroke(isNewlyInserted ? Theme.focusBorder : Theme.border, lineWidth: isNewlyInserted ? 2 : 1)
         )
+        .shadow(
+            color: isNewlyInserted ? Theme.focusBorder.opacity(0.24) : .clear,
+            radius: isNewlyInserted ? 10 : 0
+        )
+        .animation(.easeOut(duration: 0.25), value: isNewlyInserted)
     }
 
     private func cellWidth(total: CGFloat) -> CGFloat {
