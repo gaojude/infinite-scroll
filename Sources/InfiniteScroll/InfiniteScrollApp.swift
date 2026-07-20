@@ -28,6 +28,12 @@ struct InfiniteScrollApp: App {
                 }
                 .keyboardShortcut("d", modifiers: .command)
 
+                // Cmd+Shift+Up: new row above
+                Button("New Row Above") {
+                    store.addPanelAbove()
+                }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .shift])
+
                 // Cmd+Shift+Down: new row below
                 Button("New Row Below") {
                     store.addPanel()
