@@ -159,9 +159,12 @@ struct TerminalWrapper: NSViewRepresentable {
         let env = ProcessLocator.shellEnvironment()
         let envPairs = env.map { "\($0.key)=\($0.value)" }
 
-        // Use tmux if available for session persistence
+        // Use tmux if available for session persistence. Prewarming normally
+        // resolves this off-main, but the first terminal can be created before
+        // that finishes; resolve once here rather than silently falling back to
+        // a non-persistent shell on first launch.
         let sessionName = TmuxManager.sessionName(for: terminalID)
-        if let tmuxPath = TmuxManager.cachedTmuxPath() {
+        if let tmuxPath = TmuxManager.cachedTmuxPath() ?? TmuxManager.findTmux() {
             // -A: attach if exists, create if not. -c is honored only on create.
             // -D: detach other clients (from previous app run).
             let args = ["new-session", "-A", "-D", "-s", sessionName, "-c", initialDirectory]
