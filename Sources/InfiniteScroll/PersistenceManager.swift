@@ -6,6 +6,7 @@ struct AppState: Codable {
     let fontSize: CGFloat?
     let fontName: String?
     let rowHeight: CGFloat?
+    let commandScrollSpeed: CGFloat?
 }
 
 enum PersistenceManager {

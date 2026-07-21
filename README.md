@@ -6,6 +6,7 @@ A terminal workspace manager for macOS. Organize multiple terminals in an infini
 
 - Grid layout with rows and cells of terminal panels
 - Infinite vertical scrolling (`Cmd+Scroll`)
+- Adjustable `Cmd+Scroll` speed
 - Keyboard-driven navigation (`Cmd+Arrows`)
 - Tmux-backed session persistence
 - Inline markdown notes per row
@@ -31,10 +32,12 @@ swift build
 | Key               | Action             |
 | ----------------- | ------------------ |
 | `Cmd+Shift+Down`  | New row            |
+| `Cmd+Shift+R`     | Rename current row |
 | `Cmd+D`           | Duplicate cell     |
 | `Cmd+W`           | Close cell         |
 | `Cmd+Arrows`      | Navigate panels    |
 | `Cmd+Scroll`      | Scroll rows        |
+| `Cmd+F`           | Find rows, folders, and notes |
 | `Cmd+=` / `Cmd+-` | Zoom in/out        |
 | `Cmd+,`           | Settings           |
 | `Cmd+/`           | Show help          |

@@ -38,6 +38,25 @@ struct SettingsView: View {
                 )
             }
 
+            Section("Navigation") {
+                HStack {
+                    Text("Workspace scroll speed")
+                    Spacer()
+                    Text("\(Int((store.commandScrollSpeed * 100).rounded()))%")
+                        .foregroundColor(.secondary)
+                }
+
+                Slider(
+                    value: $store.commandScrollSpeed,
+                    in: PanelStore.minCommandScrollSpeed...PanelStore.maxCommandScrollSpeed,
+                    step: 0.25
+                )
+
+                Text("Applies only when holding Command while scrolling between rows.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
             Section("Shell command") {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -78,7 +97,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 420)
+        .frame(width: 480, height: 500)
         .onAppear { cliInstalled = CLIInstaller.isInstalled() }
     }
 }
