@@ -15,6 +15,7 @@ struct ContentView: View {
                             rowHeight: store.rowHeight,
                             focusedCellID: store.focusedCellID,
                             isNewlyInserted: panel.id == store.newlyAddedPanelID,
+                            onRename: { store.renameRow(id: panel.id) },
                             onClose: { store.removePanel(id: panel.id) }
                         )
                         .padding(

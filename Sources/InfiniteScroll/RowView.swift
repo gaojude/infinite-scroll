@@ -7,6 +7,7 @@ struct RowView: View {
     let rowHeight: CGFloat
     let focusedCellID: UUID?
     let isNewlyInserted: Bool
+    let onRename: () -> Void
     let onClose: () -> Void
 
     var body: some View {
@@ -20,6 +21,19 @@ struct RowView: View {
                 Text(panel.title)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundColor(Theme.text)
+
+                Button(action: onRename) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(Theme.textSecondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Rename row (⌘⇧R)")
+                .onHover { hovering in
+                    if hovering { NSCursor.arrow.push() } else { NSCursor.pop() }
+                }
 
                 if isNewlyInserted {
                     Text("NEW")

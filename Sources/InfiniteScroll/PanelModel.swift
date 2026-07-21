@@ -25,6 +25,8 @@ class CellModel: ObservableObject, Identifiable {
 // MARK: - Row model
 
 class PanelModel: ObservableObject, Identifiable {
+    static let defaultMasterTitle = "Master · Row #0"
+
     let id: UUID
     @Published var title: String
     @Published var cells: [CellModel]
@@ -39,7 +41,7 @@ class PanelModel: ObservableObject, Identifiable {
          notesText: String = "", showNotes: Bool = false, isMaster: Bool = false) {
         self.id = id
         self.isMaster = isMaster
-        self.title = isMaster ? "Master · Row #0" : "Row #\(index)"
+        self.title = isMaster ? Self.defaultMasterTitle : "Row #\(index)"
         self.notesText = notesText
         self.showNotes = showNotes
         if let cells = cells {
@@ -151,8 +153,8 @@ extension PanelModel {
             showNotes: state.showNotes ?? false,
             isMaster: isMaster
         )
-        // Trust the saved title only for non-master rows; master title is canonical.
-        if !isMaster {
+        // Both worker and master rows can have user-defined display names.
+        if !state.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             model.title = state.title
         }
         return model

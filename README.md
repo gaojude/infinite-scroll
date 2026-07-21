@@ -31,6 +31,7 @@ swift build
 | Key               | Action             |
 | ----------------- | ------------------ |
 | `Cmd+Shift+Down`  | New row            |
+| `Cmd+Shift+R`     | Rename current row |
 | `Cmd+D`           | Duplicate cell     |
 | `Cmd+W`           | Close cell         |
 | `Cmd+Arrows`      | Navigate panels    |
