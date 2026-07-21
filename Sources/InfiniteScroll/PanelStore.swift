@@ -109,7 +109,10 @@ class PanelStore: ObservableObject {
         // Route app commands from virtual key codes before SwiftTerm or an
         // input method can consume their character-based menu equivalents.
         shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleCommandShortcut(event) ?? event
+            // `nil` cancels AppKit dispatch. Do not coalesce it with `event`,
+            // or the matching SwiftUI menu shortcut will execute a second time.
+            guard let self = self else { return event }
+            return self.handleCommandShortcut(event)
         }
 
         // Boot the CLI IPC server so external agents can drive the app.
