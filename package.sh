@@ -34,6 +34,13 @@ cp "Resources/AppIcon.icns" "$APP_NAME.app/Contents/Resources/AppIcon.icns"
 # Copy bundled CLI prompt (read by the "Copy CLI Prompt" menu item)
 cp "Resources/cli-prompt.md" "$APP_NAME.app/Contents/Resources/cli-prompt.md"
 
+# Compile the app's client-only terminal description. It inherits
+# xterm-256color but omits the alternate-screen pair, allowing SwiftTerm to
+# provide normal local scrollback without entering tmux copy-mode.
+TERMINFODIR="$APP_NAME.app/Contents/Resources/terminfo"
+mkdir -p "$TERMINFODIR"
+/usr/bin/tic -x -o "$TERMINFODIR" "Resources/infinite-scroll.terminfo"
+
 # Bundle tmux
 TMUX_BIN="$(readlink -f /opt/homebrew/bin/tmux 2>/dev/null || readlink -f /usr/local/bin/tmux 2>/dev/null || echo "")"
 if [ -z "$TMUX_BIN" ]; then

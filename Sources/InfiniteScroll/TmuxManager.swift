@@ -177,8 +177,9 @@ enum TmuxManager {
         run(["set-option", "-g", "update-environment", "TERM_PROGRAM"])
     }
 
-    /// Keep app-managed panes in SwiftTerm's local scrollback. Tmux copy-mode
-    /// captures keyboard input and leaves the pane looking frozen until Escape.
+    /// Keep app-managed panes in SwiftTerm's local scrollback and remove tmux
+    /// chrome that is not useful inside the app. These are session options, so
+    /// they do not alter the user's other tmux sessions.
     static func configureSession(_ session: String) {
         // LocalProcessTerminalView starts `tmux new-session` asynchronously.
         // Wait briefly for a newly-created session so it cannot miss this
@@ -186,6 +187,7 @@ enum TmuxManager {
         for attempt in 0..<20 {
             if sessionExists(session) {
                 _ = run(["set-option", "-q", "-t", session, "mouse", "off"])
+                _ = run(["set-option", "-q", "-t", session, "status", "off"])
                 _ = run(["send-keys", "-t", session, "-X", "cancel"])
                 return
             }

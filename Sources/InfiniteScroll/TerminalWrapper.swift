@@ -2,85 +2,6 @@ import AppKit
 import SwiftUI
 import SwiftTerm
 
-// MARK: - Tmux-aware terminal input
-
-/// tmux renders its client in the terminal's alternate screen, so SwiftTerm's
-/// local scrollback is unavailable while a tmux session is attached. Keep the
-/// tmux copy-mode commands serial, then leave copy-mode before forwarding the
-/// user's next input so browsing history never leaves a cell looking frozen.
-final class TmuxTerminalView: LocalProcessTerminalView {
-    private enum CopyModeState: Equatable {
-        case inactive
-        case browsing
-        case exiting
-    }
-
-    private let tmuxCommandQueue = DispatchQueue(
-        label: "com.judegao.infinite-scroll.tmux-scroll",
-        qos: .userInitiated
-    )
-    private var tmuxSession: String?
-    private var copyModeState: CopyModeState = .inactive
-    private var pendingInput: [() -> Void] = []
-
-    var isBrowsingTmuxHistory: Bool {
-        copyModeState != .inactive
-    }
-
-    func configureTmux(session: String) {
-        tmuxSession = session
-    }
-
-    /// Returns true when this terminal is tmux-backed and has consumed the
-    /// scroll gesture. Commands are serialized so a fast two-finger gesture
-    /// cannot send scroll commands before copy-mode is entered.
-    @discardableResult
-    func scrollTmux(delta: CGFloat) -> Bool {
-        guard let session = tmuxSession, delta != 0 else { return false }
-        guard copyModeState != .exiting else { return true }
-
-        let lines = max(1, Int(abs(delta) / 12))
-        let command = delta > 0 ? "scroll-up" : "scroll-down"
-        let shouldEnterCopyMode = copyModeState == .inactive
-        copyModeState = .browsing
-
-        tmuxCommandQueue.async {
-            if shouldEnterCopyMode {
-                _ = TmuxManager.run(["copy-mode", "-t", session])
-            }
-            for _ in 0..<lines {
-                _ = TmuxManager.run(["send-keys", "-t", session, "-X", command])
-            }
-        }
-        return true
-    }
-
-    /// Run a user input action after queued scrolling has left tmux copy-mode.
-    /// Multiple keystrokes are preserved and forwarded in order once cancel
-    /// completes, rather than allowing the first key to be swallowed by tmux.
-    func exitCopyModeIfNeeded(then forward: @escaping () -> Void) {
-        guard let session = tmuxSession, copyModeState != .inactive else {
-            forward()
-            return
-        }
-
-        pendingInput.append(forward)
-        guard copyModeState == .browsing else { return }
-        copyModeState = .exiting
-
-        tmuxCommandQueue.async { [weak self] in
-            _ = TmuxManager.run(["send-keys", "-t", session, "-X", "cancel"])
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.copyModeState = .inactive
-                let input = self.pendingInput
-                self.pendingInput.removeAll()
-                input.forEach { $0() }
-            }
-        }
-    }
-}
-
 // MARK: - Shift+Enter fix for Kitty keyboard protocol
 
 enum ShiftEnterMonitor {
@@ -105,20 +26,13 @@ enum ShiftEnterMonitor {
                     // CSI-u sequence for Shift+Enter: ESC[13;2u
                     let sequence: [UInt8] = [0x1b, 0x5b, 0x31, 0x33, 0x3b, 0x32, 0x75]
 
-                    let sendShiftEnter = {
-                        if let session = TerminalViewRegistry.shared.tmuxSession(for: termView) {
-                            // tmux-backed: use send-keys to bypass tmux's input parsing
-                            DispatchQueue.global(qos: .userInteractive).async {
-                                TmuxManager.sendKeys(session, keys: ["Escape", "[13;2u"])
-                            }
-                        } else {
-                            termView.send(data: ArraySlice(sequence))
+                    if let session = TerminalViewRegistry.shared.tmuxSession(for: termView) {
+                        // tmux-backed: use send-keys to bypass tmux's input parsing
+                        DispatchQueue.global(qos: .userInteractive).async {
+                            TmuxManager.sendKeys(session, keys: ["Escape", "[13;2u"])
                         }
-                    }
-                    if let tmuxTermView = termView as? TmuxTerminalView {
-                        tmuxTermView.exitCopyModeIfNeeded(then: sendShiftEnter)
                     } else {
-                        sendShiftEnter()
+                        termView.send(data: ArraySlice(sequence))
                     }
                     return nil
                 }
@@ -151,50 +65,12 @@ enum CmdBackspaceMonitor {
                 if let termView = view as? LocalProcessTerminalView {
                     let ctrlU: [UInt8] = [0x15]
 
-                    let sendCtrlU = {
-                        if let session = TerminalViewRegistry.shared.tmuxSession(for: termView) {
-                            DispatchQueue.global(qos: .userInteractive).async {
-                                TmuxManager.sendKeys(session, keys: ["C-u"])
-                            }
-                        } else {
-                            termView.send(data: ArraySlice(ctrlU))
+                    if let session = TerminalViewRegistry.shared.tmuxSession(for: termView) {
+                        DispatchQueue.global(qos: .userInteractive).async {
+                            TmuxManager.sendKeys(session, keys: ["C-u"])
                         }
-                    }
-                    if let tmuxTermView = termView as? TmuxTerminalView {
-                        tmuxTermView.exitCopyModeIfNeeded(then: sendCtrlU)
                     } else {
-                        sendCtrlU()
-                    }
-                    return nil
-                }
-                current = view.superview
-            }
-            return event
-        }
-    }
-}
-
-// MARK: - Leave tmux copy-mode before normal terminal input
-
-enum TmuxCopyModeMonitor {
-    private static var monitor: Any?
-
-    static func install() {
-        guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard let firstResponder = event.window?.firstResponder as? NSView else {
-                return event
-            }
-
-            var current: NSView? = firstResponder
-            while let view = current {
-                if let termView = view as? TmuxTerminalView {
-                    guard termView.isBrowsingTmuxHistory else { return event }
-                    termView.exitCopyModeIfNeeded {
-                        // The local monitor consumes this event. Forward it only
-                        // after tmux has processed `cancel`, so the first key is
-                        // delivered to the shell instead of the copy-mode table.
-                        termView.keyDown(with: event)
+                        termView.send(data: ArraySlice(ctrlU))
                     }
                     return nil
                 }
@@ -216,7 +92,7 @@ struct TerminalWrapper: NSViewRepresentable {
     let onCwdChange: (String) -> Void
 
     func makeNSView(context: Context) -> LocalProcessTerminalView {
-        let termView = TmuxTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let termView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         // Disable SwiftTerm's mouse reporting so click+drag does text selection.
         termView.allowMouseReporting = false
 
@@ -242,7 +118,6 @@ struct TerminalWrapper: NSViewRepresentable {
             // -D: detach other clients (from previous app run).
             let args = ["new-session", "-A", "-D", "-s", sessionName, "-c", initialDirectory]
             context.coordinator.isTmux = true
-            termView.configureTmux(session: sessionName)
             termView.startProcess(
                 executable: tmuxPath,
                 args: args,
@@ -272,7 +147,6 @@ struct TerminalWrapper: NSViewRepresentable {
         context.coordinator.startCwdPolling()
         ShiftEnterMonitor.install()
         CmdBackspaceMonitor.install()
-        TmuxCopyModeMonitor.install()
 
         return termView
     }

@@ -6,6 +6,9 @@ import SwiftTerm
 
 class CmdNSScrollView: NSScrollView {
     private var eventMonitor: Any?
+    private weak var preciseScrollTarget: LocalProcessTerminalView?
+    private var preciseScrollRemainder: CGFloat = 0
+    private let pointsPerTerminalLine: CGFloat = 12
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -36,24 +39,7 @@ class CmdNSScrollView: NSScrollView {
                 var current: NSView? = hitView
                 while let view = current {
                     if let termView = view as? LocalProcessTerminalView {
-                        let delta = event.scrollingDeltaY
-                        if delta == 0 { return nil }
-
-                        // A tmux client uses SwiftTerm's alternate screen, which
-                        // has no local history. Let the tmux-aware view browse
-                        // tmux history; it exits copy-mode before the next input.
-                        if let tmuxTermView = termView as? TmuxTerminalView,
-                           tmuxTermView.scrollTmux(delta: delta) {
-                            return nil
-                        }
-
-                        // Plain shell terminals use SwiftTerm's local history.
-                        let lines = max(1, Int(abs(delta) / 12))
-                        if delta > 0 {
-                            termView.scrollUp(lines: lines)
-                        } else {
-                            termView.scrollDown(lines: lines)
-                        }
+                        self.scrollTerminal(termView, with: event)
                         return nil
                     }
                     current = view.superview
@@ -75,6 +61,51 @@ class CmdNSScrollView: NSScrollView {
     // This override prevents NSScrollView from scrolling its content on any stray events.
     override func scrollWheel(with event: NSEvent) {
         // no-op — monitor handles everything
+    }
+
+    /// AppKit reports trackpad scrolling in precise point deltas. Accumulate
+    /// those deltas before advancing SwiftTerm by a row so one gesture does
+    /// not cause a redraw for every tiny hardware event.
+    private func scrollTerminal(_ termView: LocalProcessTerminalView, with event: NSEvent) {
+        let delta = event.scrollingDeltaY
+        guard delta != 0 else { return }
+
+        let lines: Int
+        if event.hasPreciseScrollingDeltas {
+            if preciseScrollTarget !== termView ||
+                (preciseScrollRemainder > 0 && delta < 0) ||
+                (preciseScrollRemainder < 0 && delta > 0) {
+                preciseScrollRemainder = 0
+            }
+            preciseScrollTarget = termView
+            preciseScrollRemainder += delta
+            lines = Int(abs(preciseScrollRemainder) / pointsPerTerminalLine)
+            guard lines > 0 else { return }
+            preciseScrollRemainder -= CGFloat(lines) * (delta > 0 ? pointsPerTerminalLine : -pointsPerTerminalLine)
+        } else {
+            preciseScrollTarget = nil
+            preciseScrollRemainder = 0
+            lines = scrollWheelLines(for: delta)
+        }
+
+        if delta > 0 {
+            termView.scrollUp(lines: lines)
+        } else {
+            termView.scrollDown(lines: lines)
+        }
+    }
+
+    private func scrollWheelLines(for delta: CGFloat) -> Int {
+        switch abs(delta) {
+        case 10...:
+            return 20
+        case 6...:
+            return 10
+        case 2...:
+            return 3
+        default:
+            return 1
+        }
     }
 }
 
