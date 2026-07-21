@@ -166,15 +166,22 @@ enum TmuxManager {
 
     private static var _configuredGlobals = false
 
-    /// Configure global tmux settings (mouse, extended keys). Idempotent.
+    /// Configure global tmux input settings. Mouse handling is configured per
+    /// Infinite Scroll session so unrelated tmux sessions keep their own setup.
     static func configureGlobals() {
         guard !_configuredGlobals else { return }
         _configuredGlobals = true
-        run(["set-option", "-g", "mouse", "on"])
         run(["set-option", "-g", "extended-keys", "on"])
         run(["set-option", "-g", "extended-keys-format", "csi-u"])
         // Propagate TERM_PROGRAM into sessions on (re)attach
         run(["set-option", "-g", "update-environment", "TERM_PROGRAM"])
+    }
+
+    /// Keep app-managed panes in SwiftTerm's local scrollback. Tmux copy-mode
+    /// captures keyboard input and leaves the pane looking frozen until Escape.
+    static func configureSession(_ session: String) {
+        _ = run(["set-option", "-q", "-t", session, "mouse", "off"])
+        _ = run(["send-keys", "-t", session, "-X", "cancel"])
     }
 
     /// Send literal keys into a tmux pane, bypassing tmux's input parsing.

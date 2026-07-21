@@ -127,6 +127,7 @@ struct TerminalWrapper: NSViewRepresentable {
             )
             DispatchQueue.global(qos: .userInitiated).async {
                 TmuxManager.configureGlobals()
+                TmuxManager.configureSession(sessionName)
             }
             TerminalViewRegistry.shared.register(id: terminalID, view: termView, tmuxSession: sessionName)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
