@@ -7,6 +7,7 @@ struct RowView: View {
     let fontName: String
     let rowHeight: CGFloat
     let focusedCellID: UUID?
+    let agentRuns: [UUID: AgentRun]
     let onClose: () -> Void
 
     var body: some View {
@@ -72,15 +73,20 @@ struct RowView: View {
                                 .fill(Theme.border)
                                 .frame(width: 1)
                         }
-                        CellView(cell: cell, fontSize: fontSize, fontName: fontName)
-                            .frame(width: cellWidth(total: geo.size.width))
-                            .overlay(
-                                Rectangle()
-                                    .stroke(
-                                        focusedCellID == cell.id ? Theme.focusBorder : Color.clear,
-                                        lineWidth: 2
-                                    )
-                            )
+                        CellView(
+                            cell: cell,
+                            fontSize: fontSize,
+                            fontName: fontName,
+                            agentRun: agentRuns[cell.id]
+                        )
+                        .frame(width: cellWidth(total: geo.size.width))
+                        .overlay(
+                            Rectangle()
+                                .stroke(
+                                    focusedCellID == cell.id ? Theme.focusBorder : Color.clear,
+                                    lineWidth: 2
+                                )
+                        )
                     }
                 }
             }
@@ -102,6 +108,9 @@ struct RowView: View {
     }
 
     private var statusColor: Color {
+        if let run = panel.cells.lazy.compactMap({ agentRuns[$0.id] }).first {
+            return AgentVisuals.color(for: run.state)
+        }
         let anyRunning = panel.cells.contains { $0.type == .terminal && $0.isRunning }
         return anyRunning ? .green : .gray
     }
@@ -113,18 +122,27 @@ struct CellView: View {
     @ObservedObject var cell: CellModel
     let fontSize: CGFloat
     let fontName: String
+    let agentRun: AgentRun?
 
     var body: some View {
         switch cell.type {
         case .terminal:
-            TerminalWrapper(
-                terminalID: cell.id,
-                initialDirectory: cell.cwd,
-                fontSize: fontSize,
-                fontName: fontName,
-                onExit: { _ in cell.isRunning = false },
-                onCwdChange: { cwd in cell.cwd = cwd }
-            )
+            ZStack(alignment: .topTrailing) {
+                TerminalWrapper(
+                    terminalID: cell.id,
+                    initialDirectory: cell.cwd,
+                    fontSize: fontSize,
+                    fontName: fontName,
+                    onExit: { _ in cell.isRunning = false },
+                    onCwdChange: { cwd in cell.cwd = cwd }
+                )
+
+                if let agentRun {
+                    AgentStatusBadge(run: agentRun)
+                        .padding(8)
+                        .allowsHitTesting(false)
+                }
+            }
         case .notes:
             MarkdownNotesView(
                 notesID: cell.id,
