@@ -180,8 +180,19 @@ enum TmuxManager {
     /// Keep app-managed panes in SwiftTerm's local scrollback. Tmux copy-mode
     /// captures keyboard input and leaves the pane looking frozen until Escape.
     static func configureSession(_ session: String) {
-        _ = run(["set-option", "-q", "-t", session, "mouse", "off"])
-        _ = run(["send-keys", "-t", session, "-X", "cancel"])
+        // LocalProcessTerminalView starts `tmux new-session` asynchronously.
+        // Wait briefly for a newly-created session so it cannot miss this
+        // configuration and inherit an older global `mouse on` setting.
+        for attempt in 0..<20 {
+            if sessionExists(session) {
+                _ = run(["set-option", "-q", "-t", session, "mouse", "off"])
+                _ = run(["send-keys", "-t", session, "-X", "cancel"])
+                return
+            }
+            if attempt < 19 {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+        }
     }
 
     /// Send literal keys into a tmux pane, bypassing tmux's input parsing.

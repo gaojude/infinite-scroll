@@ -42,7 +42,17 @@ class CmdNSScrollView: NSScrollView {
                         // Keep scrolling local to SwiftTerm even for tmux-backed
                         // terminals. Entering tmux copy-mode here made the pane
                         // appear frozen and left its status line visible until Esc.
-                        termView.scrollWheel(with: event)
+                        // Do not forward the NSEvent itself: SwiftTerm's
+                        // scrollWheel implementation reads the legacy `deltaY`,
+                        // which can be zero for precise trackpad events even when
+                        // `scrollingDeltaY` is non-zero. That swallowed scrolling
+                        // entirely after this outer monitor had consumed it.
+                        let lines = max(1, Int(abs(delta) / 12))
+                        if delta > 0 {
+                            termView.scrollUp(lines: lines)
+                        } else {
+                            termView.scrollDown(lines: lines)
+                        }
                         return nil
                     }
                     current = view.superview
