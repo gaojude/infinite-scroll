@@ -4,6 +4,9 @@ import Combine
 class PanelStore: ObservableObject {
     static let defaultFontName = "Menlo-Regular"
     static let defaultRowHeight: CGFloat = 750
+    static let defaultCommandScrollSpeed: CGFloat = 1
+    static let minCommandScrollSpeed: CGFloat = 0.5
+    static let maxCommandScrollSpeed: CGFloat = 2
 
     static let availableMonospacedFonts: [String] = {
         let names = NSFontManager.shared.availableFontNames(with: .fixedPitchFontMask) ?? []
@@ -16,8 +19,10 @@ class PanelStore: ObservableObject {
     @Published var fontSize: CGFloat = 16
     @Published var fontName: String = PanelStore.defaultFontName
     @Published var rowHeight: CGFloat = PanelStore.defaultRowHeight
+    @Published var commandScrollSpeed: CGFloat = PanelStore.defaultCommandScrollSpeed
     @Published var focusedCellID: UUID?
     @Published var showHelp: Bool = false
+    @Published var showWorkspaceSearch: Bool = false
     @Published private(set) var newlyAddedPanelID: UUID?
     private var nextIndex = 1
     private var autosaveCancellables: Set<AnyCancellable> = []
@@ -41,6 +46,9 @@ class PanelStore: ObservableObject {
                 ? candidate
                 : PanelStore.defaultFontName
             rowHeight = saved.rowHeight ?? PanelStore.defaultRowHeight
+            commandScrollSpeed = Self.clampedCommandScrollSpeed(
+                saved.commandScrollSpeed ?? Self.defaultCommandScrollSpeed
+            )
             for (i, state) in saved.panels.enumerated() {
                 panels.append(PanelModel.from(state: state, index: i))
             }
@@ -84,6 +92,11 @@ class PanelStore: ObservableObject {
             .store(in: &autosaveCancellables)
 
         $rowHeight
+            .debounce(for: .seconds(2), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.save() }
+            .store(in: &autosaveCancellables)
+
+        $commandScrollSpeed
             .debounce(for: .seconds(2), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.save() }
             .store(in: &autosaveCancellables)
@@ -168,6 +181,12 @@ class PanelStore: ObservableObject {
     // MARK: - Command shortcuts
 
     private func handleCommandShortcut(_ event: NSEvent) -> NSEvent? {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if showWorkspaceSearch, event.keyCode == 53, flags.isEmpty {
+            closeWorkspaceSearch()
+            return nil
+        }
+
         guard let action = AppCommandShortcut.action(
             forKeyCode: event.keyCode,
             modifiers: event.modifierFlags
@@ -206,6 +225,8 @@ class PanelStore: ObservableObject {
             guard openSettings() else { return event }
         case .toggleHelp:
             showHelp.toggle()
+        case .findWorkspace:
+            toggleWorkspaceSearch()
         }
 
         return nil
@@ -228,6 +249,49 @@ class PanelStore: ObservableObject {
             return true
         }
         return NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+    }
+
+    // MARK: - Workspace search
+
+    func toggleWorkspaceSearch() {
+        if showWorkspaceSearch {
+            closeWorkspaceSearch()
+            return
+        }
+
+        syncFocusFromFirstResponder()
+        showHelp = false
+        showWorkspaceSearch = true
+    }
+
+    func closeWorkspaceSearch() {
+        guard showWorkspaceSearch else { return }
+        showWorkspaceSearch = false
+        scheduleFocus()
+    }
+
+    func searchResults(matching query: String) -> [WorkspaceSearchResult] {
+        WorkspaceSearch.results(in: panels, matching: query)
+    }
+
+    func jumpToSearchResult(_ result: WorkspaceSearchResult) {
+        guard let rowIndex = panels.firstIndex(where: { $0.id == result.rowID }) else { return }
+        let panel = panels[rowIndex]
+        guard let cellIndex = panel.cells.firstIndex(where: { $0.id == result.cellID })
+            ?? panel.cells.indices.first
+        else { return }
+
+        focusedRow = rowIndex
+        focusedCell = cellIndex
+        focusedCellID = panel.cells[cellIndex].id
+        showWorkspaceSearch = false
+        DispatchQueue.main.async { [weak self] in
+            self?.applyFocus()
+        }
+    }
+
+    static func clampedCommandScrollSpeed(_ speed: CGFloat) -> CGFloat {
+        min(max(speed, minCommandScrollSpeed), maxCommandScrollSpeed)
     }
 
     // MARK: - Row naming
@@ -522,7 +586,8 @@ class PanelStore: ObservableObject {
             nextIndex: nextIndex,
             fontSize: fontSize,
             fontName: fontName,
-            rowHeight: rowHeight
+            rowHeight: rowHeight,
+            commandScrollSpeed: Self.clampedCommandScrollSpeed(commandScrollSpeed)
         )
         PersistenceManager.save(state)
     }

@@ -15,6 +15,7 @@ enum AppCommandShortcut {
         case renameRow
         case openSettings
         case toggleHelp
+        case findWorkspace
     }
 
     /// Maps Command shortcuts from virtual key codes, avoiding dependence on
@@ -43,6 +44,7 @@ enum AppCommandShortcut {
         case 15 where hasShift: return .renameRow // R
         case 43 where !hasShift: return .openSettings // ,
         case 44 where !hasShift: return .toggleHelp // /
+        case 3 where !hasShift: return .findWorkspace // F
         default: return nil
         }
     }

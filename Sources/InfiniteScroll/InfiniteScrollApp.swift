@@ -47,6 +47,12 @@ struct InfiniteScrollApp: App {
             }
             CommandGroup(after: .pasteboard) {
                 Divider()
+                Button("Find in Workspace…") {
+                    store.toggleWorkspaceSearch()
+                }
+                .keyboardShortcut("f", modifiers: .command)
+
+                Divider()
                 Button("Copy CLI Prompt") {
                     CLIPromptCopier.copyToPasteboard()
                 }

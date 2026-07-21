@@ -5,7 +5,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            CmdScrollView {
+            CmdScrollView(commandScrollSpeed: store.commandScrollSpeed) {
                 VStack(spacing: 0) {
                     ForEach(Array(store.panels.enumerated()), id: \.element.id) { index, panel in
                         RowView(
@@ -30,6 +30,18 @@ struct ContentView: View {
 
             if store.showHelp {
                 HelpOverlay(isPresented: $store.showHelp)
+            }
+
+            if store.showWorkspaceSearch {
+                VStack {
+                    HStack {
+                        Spacer()
+                        WorkspaceFindBar()
+                    }
+                    Spacer()
+                }
+                .padding(.top, Theme.panelSpacing)
+                .padding(.trailing, Theme.panelSpacing)
             }
         }
     }

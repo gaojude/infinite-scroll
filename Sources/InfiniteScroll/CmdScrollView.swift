@@ -6,6 +6,7 @@ import SwiftTerm
 
 class CmdNSScrollView: NSScrollView {
     private var eventMonitor: Any?
+    var commandScrollSpeed: CGFloat = PanelStore.defaultCommandScrollSpeed
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -21,7 +22,7 @@ class CmdNSScrollView: NSScrollView {
                     // Cmd+scroll: scroll the outer window
                     let clipView = self.contentView
                     var newOrigin = clipView.bounds.origin
-                    newOrigin.y -= event.scrollingDeltaY
+                    newOrigin.y -= event.scrollingDeltaY * self.commandScrollSpeed
                     let maxY = max(0, (clipView.documentView?.frame.height ?? 0) - clipView.bounds.height)
                     newOrigin.y = min(max(0, newOrigin.y), maxY)
                     clipView.setBoundsOrigin(newOrigin)
@@ -89,14 +90,20 @@ class CmdNSScrollView: NSScrollView {
 // MARK: - CmdScrollView: SwiftUI wrapper
 
 struct CmdScrollView<Content: View>: NSViewRepresentable {
+    let commandScrollSpeed: CGFloat
     let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(
+        commandScrollSpeed: CGFloat = PanelStore.defaultCommandScrollSpeed,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.commandScrollSpeed = commandScrollSpeed
         self.content = content()
     }
 
     func makeNSView(context: Context) -> CmdNSScrollView {
         let scrollView = CmdNSScrollView()
+        scrollView.commandScrollSpeed = commandScrollSpeed
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.drawsBackground = false
@@ -120,6 +127,7 @@ struct CmdScrollView<Content: View>: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: CmdNSScrollView, context: Context) {
+        nsView.commandScrollSpeed = commandScrollSpeed
         guard let hostingView = nsView.contentView.documentView as? NSHostingView<Content> else { return }
         hostingView.rootView = content
     }
