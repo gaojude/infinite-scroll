@@ -15,7 +15,6 @@ enum Theme {
     static let notesBackground = Color(red: 0.12, green: 0.12, blue: 0.14)
     static let notesText = Color(red: 0.85, green: 0.85, blue: 0.88)
 
-    static let panelHeight: CGFloat = 750
     static let headerHeight: CGFloat = 32
     static let panelCornerRadius: CGFloat = 8
     static let panelSpacing: CGFloat = 12

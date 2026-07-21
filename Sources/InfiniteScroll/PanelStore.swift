@@ -3,7 +3,11 @@ import Combine
 
 class PanelStore: ObservableObject {
     static let defaultFontName = "Menlo-Regular"
-    static let defaultRowHeight: CGFloat = 750
+    /// 1200px gives the default 16pt terminal approximately 60 visible rows,
+    /// which keeps full-screen terminal UIs such as Codex usable without
+    /// forcing a smaller font.
+    static let defaultRowHeight: CGFloat = 1200
+    private static let legacyDefaultRowHeight: CGFloat = 750
 
     static let availableMonospacedFonts: [String] = {
         let names = NSFontManager.shared.availableFontNames(with: .fixedPitchFontMask) ?? []
@@ -25,6 +29,7 @@ class PanelStore: ObservableObject {
     private var clickMonitor: Any?
     private var shortcutMonitor: Any?
     private var cliServer: CLIServer?
+    private var shouldPersistMigratedLayout = false
 
     // Focus tracking: row index + cell index within that row
     var focusedRow: Int = 0
@@ -34,12 +39,19 @@ class PanelStore: ObservableObject {
         let saved = PersistenceManager.load()
         if let saved = saved, !saved.panels.isEmpty {
             nextIndex = saved.nextIndex
-            fontSize = saved.fontSize ?? 16
+            let savedFontSize = saved.fontSize ?? 16
+            fontSize = savedFontSize
             let candidate = saved.fontName ?? PanelStore.defaultFontName
             fontName = PanelStore.availableMonospacedFonts.contains(candidate)
                 ? candidate
                 : PanelStore.defaultFontName
-            rowHeight = saved.rowHeight ?? PanelStore.defaultRowHeight
+            let savedRowHeight = saved.rowHeight ?? PanelStore.defaultRowHeight
+            if savedRowHeight == PanelStore.legacyDefaultRowHeight && savedFontSize == 16 {
+                rowHeight = PanelStore.defaultRowHeight
+                shouldPersistMigratedLayout = true
+            } else {
+                rowHeight = savedRowHeight
+            }
             for (i, state) in saved.panels.enumerated() {
                 panels.append(PanelModel.from(state: state, index: i))
             }
@@ -118,6 +130,10 @@ class PanelStore: ObservableObject {
         // Boot the CLI IPC server so external agents can drive the app.
         cliServer = CLIServer(store: self)
         cliServer?.start()
+
+        if shouldPersistMigratedLayout {
+            save()
+        }
     }
 
     deinit {
