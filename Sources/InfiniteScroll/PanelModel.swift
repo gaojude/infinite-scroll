@@ -29,6 +29,9 @@ class PanelModel: ObservableObject, Identifiable {
 
     let id: UUID
     @Published var title: String
+    /// Generated row labels are renumbered after rows are inserted or closed.
+    /// A title explicitly chosen by the user remains unchanged.
+    @Published var hasCustomTitle: Bool
     @Published var cells: [CellModel]
     /// Persisted notes content — survives toggling notes off/on.
     @Published var notesText: String
@@ -41,7 +44,8 @@ class PanelModel: ObservableObject, Identifiable {
          notesText: String = "", showNotes: Bool = false, isMaster: Bool = false) {
         self.id = id
         self.isMaster = isMaster
-        self.title = isMaster ? Self.defaultMasterTitle : "Row #\(index)"
+        self.title = Self.defaultTitle(index: index, isMaster: isMaster)
+        self.hasCustomTitle = false
         self.notesText = notesText
         self.showNotes = showNotes
         if let cells = cells {
@@ -69,6 +73,27 @@ class PanelModel: ObservableObject, Identifiable {
             showNotes = true
         }
     }
+
+    func rename(to newTitle: String) {
+        title = newTitle
+        hasCustomTitle = true
+    }
+
+    func updateGeneratedTitle(index: Int) {
+        guard !hasCustomTitle else { return }
+        title = Self.defaultTitle(index: index, isMaster: isMaster)
+    }
+
+    static func defaultTitle(index: Int, isMaster: Bool) -> String {
+        isMaster ? defaultMasterTitle : "Row #\(index)"
+    }
+
+    static func isGeneratedTitle(_ title: String, isMaster: Bool) -> Bool {
+        if isMaster {
+            return title == defaultMasterTitle
+        }
+        return title.range(of: #"^Row #\d+$"#, options: .regularExpression) != nil
+    }
 }
 
 // MARK: - Codable persistence
@@ -83,6 +108,7 @@ struct CellState: Codable {
 struct PanelState: Codable {
     let id: String
     let title: String
+    let hasCustomTitle: Bool?
     let cells: [CellState]?
     let notesText: String?
     let showNotes: Bool?
@@ -124,6 +150,7 @@ extension PanelModel {
         return PanelState(
             id: id.uuidString,
             title: title,
+            hasCustomTitle: hasCustomTitle,
             cells: cells.map { $0.toState() },
             notesText: currentNotesText,
             showNotes: showNotes,
@@ -153,10 +180,13 @@ extension PanelModel {
             showNotes: state.showNotes ?? false,
             isMaster: isMaster
         )
-        // Both worker and master rows can have user-defined display names.
+        // Older saves did not record whether a title was renamed. Treat generated
+        // `Row #n` labels as defaults so they can join the new sequential scheme.
         if !state.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             model.title = state.title
         }
+        model.hasCustomTitle = state.hasCustomTitle
+            ?? !PanelModel.isGeneratedTitle(state.title, isMaster: isMaster)
         return model
     }
 }

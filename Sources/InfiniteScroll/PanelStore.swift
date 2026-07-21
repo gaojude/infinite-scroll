@@ -35,7 +35,6 @@ class PanelStore: ObservableObject {
     init() {
         let saved = PersistenceManager.load()
         if let saved = saved, !saved.panels.isEmpty {
-            nextIndex = max(saved.nextIndex, 1)
             fontSize = saved.fontSize ?? 16
             let candidate = saved.fontName ?? PanelStore.defaultFontName
             fontName = PanelStore.availableMonospacedFonts.contains(candidate)
@@ -46,7 +45,7 @@ class PanelStore: ObservableObject {
                 panels.append(PanelModel.from(state: state, index: i))
             }
             ensureMasterRow()
-            normalizeMasterTitle()
+            renumberRows()
             print("[InfiniteScroll] Restored \(saved.panels.count) panels, fontSize=\(fontSize), fontName=\(fontName)")
             // Clean up orphaned tmux sessions from previous runs
             let activeCellIDs = Set(panels.flatMap { $0.cells.filter { $0.type == .terminal }.map { $0.id } })
@@ -268,7 +267,7 @@ class PanelStore: ObservableObject {
             NSSound.beep()
             return
         }
-        panel.title = newTitle
+        panel.rename(to: newTitle)
     }
 
     // MARK: - Row operations
@@ -300,10 +299,10 @@ class PanelStore: ObservableObject {
 
     private func insertPanel(at proposedIndex: Int) {
         let panel = PanelModel(index: nextIndex)
-        nextIndex += 1
         // Never insert before the master row at index 0
         let insertAt = max(1, min(proposedIndex, panels.count))
         panels.insert(panel, at: insertAt)
+        renumberRows()
         showInsertionFeedback(for: panel.id)
         focusedRow = insertAt
         focusedCell = 0
@@ -323,18 +322,18 @@ class PanelStore: ObservableObject {
         }
         panels.removeAll { $0.id == id }
         // Master always remains, so panels is never empty here. Don't terminate.
+        renumberRows()
         focusedRow = min(focusedRow, max(panels.count - 1, 0))
         clampCell()
     }
 
-    /// The master row is structural, but its display name is user-configurable.
-    /// Only restore the default title when an older save contains an empty value.
-    private func normalizeMasterTitle() {
-        if let master = panels.first,
-           master.isMaster,
-           master.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            master.title = "Master · Row #0"
+    /// Derive future row labels from the current workspace, never from a
+    /// historical counter saved before the app was closed.
+    private func renumberRows() {
+        for (index, panel) in panels.enumerated() {
+            panel.updateGeneratedTitle(index: index)
         }
+        nextIndex = max(panels.count, 1)
     }
 
     private func showInsertionFeedback(for panelID: UUID) {
