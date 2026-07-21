@@ -93,8 +93,8 @@ struct TerminalWrapper: NSViewRepresentable {
 
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let termView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        // Disable SwiftTerm's mouse reporting so click+drag does text selection.
-        // Scroll events are forwarded to tmux separately via CmdScrollView.
+        // Disable SwiftTerm's mouse reporting so click+drag does text selection
+        // and scrolling stays in SwiftTerm's local scrollback buffer.
         termView.allowMouseReporting = false
 
         let bgColor = NSColor(red: 0.1, green: 0.1, blue: 0.12, alpha: 1.0)

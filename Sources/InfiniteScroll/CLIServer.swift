@@ -218,11 +218,10 @@ final class CLIServer {
         case .fail(let msg):
             return .failure(msg)
         case .send(let session):
-            // The pane may be in copy-mode (entered when the user scrolled the
-            // cell back — see CmdScrollView). In copy-mode, `send-keys`
-            // dispatches to the copy-mode key table instead of the shell, so
-            // the input would be silently dropped. `-X cancel` exits copy-mode
-            // and is a no-op when the pane isn't in it.
+            // A pane can be in tmux copy-mode (for example, from its own key
+            // bindings). In that state `send-keys` dispatches to the copy-mode
+            // key table instead of the shell, so cancel it first. `-X cancel`
+            // is a no-op when the pane is not in copy-mode.
             _ = TmuxManager.run(["send-keys", "-t", session, "-X", "cancel"])
             if let keys = req.keys, !keys.isEmpty {
                 TmuxManager.sendKeys(session, keys: keys)

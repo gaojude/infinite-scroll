@@ -39,29 +39,10 @@ class CmdNSScrollView: NSScrollView {
                         let delta = event.scrollingDeltaY
                         if delta == 0 { return nil }
 
-                        if let session = TerminalViewRegistry.shared.tmuxSession(for: termView) {
-                            // tmux-backed: use tmux copy-mode scrolling.
-                            // TODO(ux): scrolling enters tmux copy-mode, so the user
-                            // must press Esc before typing again. Making any key
-                            // cancel-and-forward requires either a custom copy-mode
-                            // key table (overhauls tmux's bindings) or a per-cell
-                            // "scrolled" flag + AppKit key monitor that prepends
-                            // `send-keys -X cancel`. Skipped per task 5.2; the CLI
-                            // silent-drop path is handled in CLIServer's send handler.
-                            let lineHeight: CGFloat = 16
-                            let lines = max(1, Int(abs(delta) / lineHeight))
-                            let cmd = delta > 0 ? "scroll-up" : "scroll-down"
-
-                            DispatchQueue.global(qos: .userInteractive).async {
-                                TmuxManager.run(["copy-mode", "-t", session])
-                                for _ in 0..<lines {
-                                    TmuxManager.run(["send-keys", "-t", session, "-X", cmd])
-                                }
-                            }
-                        } else {
-                            // No tmux — use SwiftTerm's own scrollback buffer
-                            termView.scrollWheel(with: event)
-                        }
+                        // Keep scrolling local to SwiftTerm even for tmux-backed
+                        // terminals. Entering tmux copy-mode here made the pane
+                        // appear frozen and left its status line visible until Esc.
+                        termView.scrollWheel(with: event)
                         return nil
                     }
                     current = view.superview
