@@ -39,14 +39,15 @@ class CmdNSScrollView: NSScrollView {
                         let delta = event.scrollingDeltaY
                         if delta == 0 { return nil }
 
-                        // Keep scrolling local to SwiftTerm even for tmux-backed
-                        // terminals. Entering tmux copy-mode here made the pane
-                        // appear frozen and left its status line visible until Esc.
-                        // Do not forward the NSEvent itself: SwiftTerm's
-                        // scrollWheel implementation reads the legacy `deltaY`,
-                        // which can be zero for precise trackpad events even when
-                        // `scrollingDeltaY` is non-zero. That swallowed scrolling
-                        // entirely after this outer monitor had consumed it.
+                        // A tmux client uses SwiftTerm's alternate screen, which
+                        // has no local history. Let the tmux-aware view browse
+                        // tmux history; it exits copy-mode before the next input.
+                        if let tmuxTermView = termView as? TmuxTerminalView,
+                           tmuxTermView.scrollTmux(delta: delta) {
+                            return nil
+                        }
+
+                        // Plain shell terminals use SwiftTerm's local history.
                         let lines = max(1, Int(abs(delta) / 12))
                         if delta > 0 {
                             termView.scrollUp(lines: lines)
