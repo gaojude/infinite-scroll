@@ -2,6 +2,9 @@ import Foundation
 
 enum TmuxManager {
     static let prefix = "is-"
+    /// Native and tmux scrollback use one bounded limit. A finite buffer keeps
+    /// long-running Codex sessions scrollable without unbounded memory growth.
+    static let historyLimit = 10_000
     private static let cacheLock = NSLock()
     private static var _cachedPath: String?
     private static var _checked = false
@@ -186,6 +189,7 @@ enum TmuxManager {
         // configuration and inherit an older global `mouse on` setting.
         for attempt in 0..<20 {
             if sessionExists(session) {
+                _ = run(["set-option", "-q", "-t", session, "history-limit", "\(historyLimit)"])
                 _ = run(["set-option", "-q", "-t", session, "mouse", "off"])
                 _ = run(["set-option", "-q", "-t", session, "status", "off"])
                 _ = run(["send-keys", "-t", session, "-X", "cancel"])

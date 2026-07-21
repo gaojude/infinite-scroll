@@ -93,6 +93,10 @@ struct TerminalWrapper: NSViewRepresentable {
 
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let termView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        // SwiftTerm defaults to 500 lines. Keep the same bounded history as
+        // the app-managed tmux pane so native scrolling can reach the complete
+        // retained terminal history without using tmux copy-mode.
+        termView.terminal.changeScrollback(TmuxManager.historyLimit)
         // Disable SwiftTerm's mouse reporting so click+drag does text selection.
         termView.allowMouseReporting = false
 

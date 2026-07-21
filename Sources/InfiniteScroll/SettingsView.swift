@@ -36,10 +36,6 @@ struct SettingsView: View {
                     in: PanelStore.minRowHeight...PanelStore.maxRowHeight,
                     step: 25
                 )
-
-                Text("Codex recommendation: 1200px at the default 16pt font (about 60 rows).")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
             }
 
             Section("Shell command") {
