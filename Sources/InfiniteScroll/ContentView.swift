@@ -6,16 +6,21 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             CmdScrollView {
-                VStack(spacing: Theme.panelSpacing) {
+                VStack(spacing: 0) {
                     ForEach(Array(store.panels.enumerated()), id: \.element.id) { index, panel in
                         RowView(
                             panel: panel,
-                            index: index + 1,
                             fontSize: store.fontSize,
                             fontName: store.fontName,
                             rowHeight: store.rowHeight,
                             focusedCellID: store.focusedCellID,
+                            isNewlyInserted: panel.id == store.newlyAddedPanelID,
+                            onRename: { store.renameRow(id: panel.id) },
                             onClose: { store.removePanel(id: panel.id) }
+                        )
+                        .padding(
+                            .bottom,
+                            rowSpacing(after: panel, at: index, total: store.panels.count)
                         )
                     }
                 }
@@ -27,5 +32,10 @@ struct ContentView: View {
                 HelpOverlay(isPresented: $store.showHelp)
             }
         }
+    }
+
+    private func rowSpacing(after panel: PanelModel, at index: Int, total: Int) -> CGFloat {
+        guard index < total - 1 else { return 0 }
+        return panel.isMaster ? Theme.masterSectionSpacing : Theme.panelSpacing
     }
 }

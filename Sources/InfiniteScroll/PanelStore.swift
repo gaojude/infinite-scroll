@@ -18,12 +18,15 @@ class PanelStore: ObservableObject {
     @Published var rowHeight: CGFloat = PanelStore.defaultRowHeight
     @Published var focusedCellID: UUID?
     @Published var showHelp: Bool = false
+    @Published private(set) var newlyAddedPanelID: UUID?
     private var nextIndex = 1
     private var autosaveCancellables: Set<AnyCancellable> = []
     private var nestedCancellables: Set<AnyCancellable> = []
     private var terminationObserver: Any?
     private var clickMonitor: Any?
+    private var shortcutMonitor: Any?
     private var cliServer: CLIServer?
+    private var insertionFeedbackWorkItem: DispatchWorkItem?
 
     // Focus tracking: row index + cell index within that row
     var focusedRow: Int = 0
@@ -32,7 +35,6 @@ class PanelStore: ObservableObject {
     init() {
         let saved = PersistenceManager.load()
         if let saved = saved, !saved.panels.isEmpty {
-            nextIndex = saved.nextIndex
             fontSize = saved.fontSize ?? 16
             let candidate = saved.fontName ?? PanelStore.defaultFontName
             fontName = PanelStore.availableMonospacedFonts.contains(candidate)
@@ -105,6 +107,15 @@ class PanelStore: ObservableObject {
             return event
         }
 
+        // Route app commands from physical key codes before SwiftTerm or an
+        // input method can consume their character-based menu equivalents.
+        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // `nil` cancels AppKit dispatch. Do not coalesce it with `event`,
+            // or the matching SwiftUI menu shortcut will execute a second time.
+            guard let self = self else { return event }
+            return self.handleCommandShortcut(event)
+        }
+
         // Boot the CLI IPC server so external agents can drive the app.
         cliServer = CLIServer(store: self)
         cliServer?.start()
@@ -115,6 +126,9 @@ class PanelStore: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         if let monitor = clickMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = shortcutMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }
@@ -151,6 +165,111 @@ class PanelStore: ObservableObject {
         }
     }
 
+    // MARK: - Command shortcuts
+
+    private func handleCommandShortcut(_ event: NSEvent) -> NSEvent? {
+        guard let action = AppCommandShortcut.action(
+            forKeyCode: event.keyCode,
+            modifiers: event.modifierFlags
+        ) else {
+            return event
+        }
+
+        switch action {
+        case .duplicateCell:
+            duplicateCurrentCell()
+        case .closeCell:
+            closeCurrentCell()
+        case .newRowAbove:
+            syncFocusFromFirstResponder()
+            addPanelAbove()
+        case .newRowBelow:
+            syncFocusFromFirstResponder()
+            addPanel()
+        case .focusUp:
+            focusUp()
+        case .focusDown:
+            focusDown()
+        case .focusLeft:
+            syncFocusFromFirstResponder()
+            focusLeft()
+        case .focusRight:
+            syncFocusFromFirstResponder()
+            focusRight()
+        case .zoomIn:
+            zoomIn()
+        case .zoomOut:
+            zoomOut()
+        case .renameRow:
+            renameCurrentRow()
+        case .openSettings:
+            guard openSettings() else { return event }
+        case .toggleHelp:
+            showHelp.toggle()
+        }
+
+        return nil
+    }
+
+    private func openSettings() -> Bool {
+        guard let mainMenu = NSApp.mainMenu else { return false }
+        for topItem in mainMenu.items {
+            guard let submenu = topItem.submenu else { continue }
+            for (index, item) in submenu.items.enumerated() {
+                if item.keyEquivalent == ",",
+                   item.keyEquivalentModifierMask == .command,
+                   item.isEnabled {
+                    submenu.performActionForItem(at: index)
+                    return true
+                }
+            }
+        }
+        if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
+            return true
+        }
+        return NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+    }
+
+    // MARK: - Row naming
+
+    /// Opens the rename prompt for the row containing the focused cell.
+    func renameCurrentRow() {
+        syncFocusFromFirstResponder()
+        presentRenamePrompt(for: focusedRow)
+    }
+
+    /// Opens the rename prompt for a specific row, used by its header action.
+    func renameRow(id: UUID) {
+        guard let rowIndex = panels.firstIndex(where: { $0.id == id }) else { return }
+        presentRenamePrompt(for: rowIndex)
+    }
+
+    private func presentRenamePrompt(for rowIndex: Int) {
+        guard panels.indices.contains(rowIndex) else { return }
+
+        let panel = panels[rowIndex]
+        let nameField = NSTextField(string: panel.title)
+        nameField.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        nameField.placeholderString = "Row name"
+        nameField.selectText(nil)
+
+        let alert = NSAlert()
+        alert.messageText = panel.isMaster ? "Rename Master Row" : "Rename Row"
+        alert.informativeText = "Choose a name for this row."
+        alert.accessoryView = nameField
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let newTitle = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newTitle.isEmpty else {
+            NSSound.beep()
+            return
+        }
+        panel.rename(to: newTitle)
+    }
+
     // MARK: - Row operations
 
     /// Ensure exactly one master row exists at index 0. Demotes any extras to workers.
@@ -171,13 +290,20 @@ class PanelStore: ObservableObject {
     }
 
     func addPanel() {
-        let panel = PanelModel(index: panels.count)
-        nextIndex += 1
+        insertPanel(at: focusedRow + 1)
+    }
+
+    func addPanelAbove() {
+        insertPanel(at: focusedRow)
+    }
+
+    private func insertPanel(at proposedIndex: Int) {
+        let panel = PanelModel(index: nextIndex)
         // Never insert before the master row at index 0
-        let proposed = focusedRow + 1
-        let insertAt = max(1, min(proposed, panels.count))
+        let insertAt = max(1, min(proposedIndex, panels.count))
         panels.insert(panel, at: insertAt)
         renumberRows()
+        showInsertionFeedback(for: panel.id)
         focusedRow = insertAt
         focusedCell = 0
         scheduleFocus()
@@ -196,19 +322,29 @@ class PanelStore: ObservableObject {
         }
         panels.removeAll { $0.id == id }
         // Master always remains, so panels is never empty here. Don't terminate.
+        renumberRows()
         focusedRow = min(focusedRow, max(panels.count - 1, 0))
         clampCell()
-        renumberRows()
     }
 
+    /// Derive future row labels from the current workspace, never from a
+    /// historical counter saved before the app was closed.
     private func renumberRows() {
-        for (i, panel) in panels.enumerated() {
-            if panel.isMaster {
-                panel.title = "Master · Row #0"
-            } else {
-                panel.title = "Row #\(i)"
-            }
+        for (index, panel) in panels.enumerated() {
+            panel.updateGeneratedTitle(index: index)
         }
+        nextIndex = max(panels.count, 1)
+    }
+
+    private func showInsertionFeedback(for panelID: UUID) {
+        insertionFeedbackWorkItem?.cancel()
+        newlyAddedPanelID = panelID
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.newlyAddedPanelID = nil
+        }
+        insertionFeedbackWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: workItem)
     }
 
     // MARK: - Cell operations
@@ -289,15 +425,25 @@ class PanelStore: ObservableObject {
     // MARK: - Focus navigation
 
     func focusUp() {
-        guard panels.count > 1 else { return }
-        focusedRow = (focusedRow - 1 + panels.count) % panels.count
+        syncFocusFromFirstResponder()
+        guard let row = RowFocusNavigation.adjacentRow(
+            from: focusedRow,
+            rowCount: panels.count,
+            direction: .up
+        ) else { return }
+        focusedRow = row
         clampCell()
         applyFocus()
     }
 
     func focusDown() {
-        guard panels.count > 1 else { return }
-        focusedRow = (focusedRow + 1) % panels.count
+        syncFocusFromFirstResponder()
+        guard let row = RowFocusNavigation.adjacentRow(
+            from: focusedRow,
+            rowCount: panels.count,
+            direction: .down
+        ) else { return }
+        focusedRow = row
         clampCell()
         applyFocus()
     }

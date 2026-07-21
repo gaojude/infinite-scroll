@@ -6,7 +6,9 @@ struct HelpOverlay: View {
     private static let shortcuts: [(key: String, description: String)] = [
         ("⌘ W",         "Close current cell"),
         ("⌘ D",         "Duplicate current cell"),
+        ("⌘ ⇧ ↑",      "New row above"),
         ("⌘ ⇧ ↓",      "New row below"),
+        ("⌘ ⇧ R",      "Rename current row"),
         ("⌘ =",         "Zoom in"),
         ("⌘ -",         "Zoom out"),
         ("⌘ ,",         "Open settings"),

@@ -36,17 +36,18 @@ enum TmuxManager {
         }
         cacheLock.unlock()
 
-        let candidates = [
+        let systemCandidates = [
             "/opt/homebrew/bin/tmux",
             "/usr/local/bin/tmux",
             "/usr/bin/tmux",
         ]
-        var searchPaths = candidates
+        var searchPaths: [String] = []
         if let bundlePath = Bundle.main.executableURL?
             .deletingLastPathComponent()
             .appendingPathComponent("tmux").path {
             searchPaths.append(bundlePath)
         }
+        searchPaths.append(contentsOf: systemCandidates)
 
         var resolved: String?
         for path in searchPaths {
