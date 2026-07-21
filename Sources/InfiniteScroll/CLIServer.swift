@@ -369,22 +369,9 @@ private enum SendPlan {
 
 enum TmuxCapture {
     static func capture(session: String, scrollback: Int?) -> String {
-        guard let tmux = TmuxManager.cachedTmuxPath() ?? TmuxManager.findTmux() else { return "" }
-        var args = ["capture-pane", "-p", "-t", session]
-        if let n = scrollback, n > 0 {
-            args += ["-S", "-\(n)"]
+        guard let data = TmuxManager.capturePane(session: session, scrollback: scrollback) else {
+            return ""
         }
-        let task = Process()
-        let pipe = Pipe()
-        task.executableURL = URL(fileURLWithPath: tmux)
-        task.arguments = args
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch { return "" }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8) ?? ""
     }
 }
