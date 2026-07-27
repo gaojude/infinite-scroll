@@ -2,11 +2,13 @@ import SwiftUI
 
 struct RowView: View {
     @ObservedObject var panel: PanelModel
-    let index: Int
     let fontSize: CGFloat
     let fontName: String
     let rowHeight: CGFloat
     let focusedCellID: UUID?
+    let agentRuns: [UUID: AgentRun]
+    let isNewlyInserted: Bool
+    let onRename: () -> Void
     let onClose: () -> Void
 
     var body: some View {
@@ -20,6 +22,31 @@ struct RowView: View {
                 Text(panel.title)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundColor(Theme.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Button(action: onRename) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(Theme.textSecondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Rename row (⌘⇧R)")
+                .onHover { hovering in
+                    if hovering { NSCursor.arrow.push() } else { NSCursor.pop() }
+                }
+
+                if isNewlyInserted {
+                    Text("NEW")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(Theme.accent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Theme.accent.opacity(0.14), in: Capsule())
+                        .transition(.opacity)
+                }
 
                 Spacer()
 
@@ -35,33 +62,25 @@ struct RowView: View {
                     if hovering { NSCursor.arrow.push() } else { NSCursor.pop() }
                 }
 
-                if panel.isMaster {
-                    Image(systemName: "lock.fill")
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(Theme.textSecondary)
                         .frame(width: 20, height: 20)
-                        .help("Master row — cannot be closed or controlled by the CLI")
-                } else {
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(Theme.textSecondary)
-                            .frame(width: 20, height: 20)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { hovering in
-                        if hovering {
-                            NSCursor.arrow.push()
-                        } else {
-                            NSCursor.pop()
-                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    if hovering {
+                        NSCursor.arrow.push()
+                    } else {
+                        NSCursor.pop()
                     }
                 }
             }
             .padding(.horizontal, 12)
             .frame(height: Theme.headerHeight)
-            .background(Theme.headerBackground)
+            .background(panel.isMaster ? Theme.masterHeaderBackground : Theme.headerBackground)
 
             // Dynamic cells — equal width
             GeometryReader { geo in
@@ -72,7 +91,12 @@ struct RowView: View {
                                 .fill(Theme.border)
                                 .frame(width: 1)
                         }
-                        CellView(cell: cell, fontSize: fontSize, fontName: fontName)
+                        CellView(
+                            cell: cell,
+                            fontSize: fontSize,
+                            fontName: fontName,
+                            agentRun: agentRuns[cell.id]
+                        )
                             .frame(width: cellWidth(total: geo.size.width))
                             .overlay(
                                 Rectangle()
@@ -90,8 +114,13 @@ struct RowView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.panelCornerRadius))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.panelCornerRadius)
-                .stroke(Theme.border, lineWidth: 1)
+                .stroke(isNewlyInserted ? Theme.focusBorder : Theme.border, lineWidth: isNewlyInserted ? 2 : 1)
         )
+        .shadow(
+            color: isNewlyInserted ? Theme.focusBorder.opacity(0.24) : .clear,
+            radius: isNewlyInserted ? 10 : 0
+        )
+        .animation(.easeOut(duration: 0.25), value: isNewlyInserted)
     }
 
     private func cellWidth(total: CGFloat) -> CGFloat {
@@ -102,6 +131,9 @@ struct RowView: View {
     }
 
     private var statusColor: Color {
+        if let run = panel.cells.lazy.compactMap({ agentRuns[$0.id] }).first {
+            return AgentVisuals.color(for: run.state)
+        }
         let anyRunning = panel.cells.contains { $0.type == .terminal && $0.isRunning }
         return anyRunning ? .green : .gray
     }
@@ -113,18 +145,27 @@ struct CellView: View {
     @ObservedObject var cell: CellModel
     let fontSize: CGFloat
     let fontName: String
+    let agentRun: AgentRun?
 
     var body: some View {
         switch cell.type {
         case .terminal:
-            TerminalWrapper(
-                terminalID: cell.id,
-                initialDirectory: cell.cwd,
-                fontSize: fontSize,
-                fontName: fontName,
-                onExit: { _ in cell.isRunning = false },
-                onCwdChange: { cwd in cell.cwd = cwd }
-            )
+            ZStack(alignment: .topTrailing) {
+                TerminalWrapper(
+                    terminalID: cell.id,
+                    initialDirectory: cell.cwd,
+                    fontSize: fontSize,
+                    fontName: fontName,
+                    onExit: { _ in cell.isRunning = false },
+                    onCwdChange: { cwd in cell.cwd = cwd }
+                )
+
+                if let agentRun {
+                    AgentStatusBadge(run: agentRun)
+                        .padding(8)
+                        .allowsHitTesting(false)
+                }
+            }
         case .notes:
             MarkdownNotesView(
                 notesID: cell.id,

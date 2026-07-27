@@ -6,7 +6,7 @@ extension PanelStore {
 
     // MARK: - Snapshot
 
-    /// Full snapshot including the master row at index 0.
+    /// Full snapshot, including an optional master row.
     func snapshot() -> [RowInfo] {
         let focusedID = focusedCellID
         return panels.enumerated().map { rowIdx, panel in
@@ -31,15 +31,17 @@ extension PanelStore {
         }
     }
 
-    /// Snapshot visible to the CLI — excludes the master row.
+    /// Snapshot visible to the CLI — excludes only rows explicitly marked master.
     func cliVisibleSnapshot() -> [RowInfo] {
-        snapshot().filter { $0.index != 0 }
+        snapshot().filter { info in
+            panels.indices.contains(info.index) && !panels[info.index].isMaster
+        }
     }
 
     // MARK: - Reference resolution
 
     /// Resolve a cell reference (UUID or "row.cell") to array indices.
-    /// Row number maps directly to the panels array index (master = 0).
+    /// Row number maps directly to the panels array index.
     func resolveCell(_ ref: String) -> (rowIdx: Int, cellIdx: Int)? {
         if let uuid = UUID(uuidString: ref) {
             for (rowIdx, panel) in panels.enumerated() {
@@ -61,7 +63,7 @@ extension PanelStore {
         return (rowIdx, cellIdx)
     }
 
-    /// Resolve a row reference (UUID or integer index where master = 0).
+    /// Resolve a row reference (UUID or integer index).
     func resolveRow(_ ref: String) -> Int? {
         if let uuid = UUID(uuidString: ref) {
             return panels.firstIndex(where: { $0.id == uuid })

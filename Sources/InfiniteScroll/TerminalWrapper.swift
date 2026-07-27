@@ -81,53 +81,6 @@ enum CmdBackspaceMonitor {
     }
 }
 
-// MARK: - Cmd+, → open Settings (SwiftTerm eats Cmd-modified keys before menus)
-
-enum CmdCommaMonitor {
-    private static var monitor: Any?
-
-    static func install() {
-        guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.charactersIgnoringModifiers == ",",
-                  event.modifierFlags.contains(.command),
-                  !event.modifierFlags.contains(.shift),
-                  !event.modifierFlags.contains(.control),
-                  !event.modifierFlags.contains(.option) else {
-                return event
-            }
-            if openSettings() { return nil }
-            return event
-        }
-    }
-
-    /// Opens the Settings window. SwiftUI's Settings scene wires its menu item via
-    /// internal selectors that aren't always reachable via NSApp.sendAction, so we
-    /// walk the main menu to find the Cmd+, item and perform its action directly.
-    private static func openSettings() -> Bool {
-        guard let mainMenu = NSApp.mainMenu else { return false }
-        for topItem in mainMenu.items {
-            guard let submenu = topItem.submenu else { continue }
-            for (index, item) in submenu.items.enumerated() {
-                if item.keyEquivalent == ",",
-                   item.keyEquivalentModifierMask == .command,
-                   item.isEnabled {
-                    submenu.performActionForItem(at: index)
-                    return true
-                }
-            }
-        }
-        // Fallbacks if no menu item exists yet
-        if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
-            return true
-        }
-        if NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil) {
-            return true
-        }
-        return false
-    }
-}
-
 // MARK: - TerminalWrapper
 
 struct TerminalWrapper: NSViewRepresentable {
@@ -140,8 +93,11 @@ struct TerminalWrapper: NSViewRepresentable {
 
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let termView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        // SwiftTerm defaults to 500 lines. Keep the same bounded history as
+        // the app-managed tmux pane so native scrolling can reach the complete
+        // retained terminal history without using tmux copy-mode.
+        termView.terminal.changeScrollback(TmuxManager.historyLimit)
         // Disable SwiftTerm's mouse reporting so click+drag does text selection.
-        // Scroll events are forwarded to tmux separately via CmdScrollView.
         termView.allowMouseReporting = false
 
         let bgColor = NSColor(red: 0.1, green: 0.1, blue: 0.12, alpha: 1.0)
@@ -159,25 +115,50 @@ struct TerminalWrapper: NSViewRepresentable {
         let env = ProcessLocator.shellEnvironment()
         let envPairs = env.map { "\($0.key)=\($0.value)" }
 
-        // Use tmux if available for session persistence
+        // Use tmux if available for session persistence. Prewarming normally
+        // resolves this off-main, but the first terminal can be created before
+        // that finishes; resolve once here rather than silently falling back to
+        // a non-persistent shell on first launch.
         let sessionName = TmuxManager.sessionName(for: terminalID)
-        if let tmuxPath = TmuxManager.cachedTmuxPath() {
+        if let tmuxPath = TmuxManager.cachedTmuxPath() ?? TmuxManager.findTmux() {
             // -A: attach if exists, create if not. -c is honored only on create.
             // -D: detach other clients (from previous app run).
             let args = ["new-session", "-A", "-D", "-s", sessionName, "-c", initialDirectory]
-            context.coordinator.isTmux = true
-            termView.startProcess(
-                executable: tmuxPath,
-                args: args,
-                environment: envPairs,
-                execName: "tmux"
-            )
-            DispatchQueue.global(qos: .userInitiated).async {
-                TmuxManager.configureGlobals()
-            }
+            let coordinator = context.coordinator
+            coordinator.isTmux = true
             TerminalViewRegistry.shared.register(id: terminalID, view: termView, tmuxSession: sessionName)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                termView.send(data: ArraySlice<UInt8>([0x0c])) // Ctrl+L
+
+            // Let SwiftUI complete the first layout pass before importing the
+            // saved history. That keeps captured lines aligned with the final
+            // terminal width instead of the temporary 800x600 construction size.
+            DispatchQueue.main.async { [weak coordinator] in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    TmuxManager.configureGlobals()
+                    _ = TmuxManager.configureExistingSession(sessionName)
+                    let history = TmuxManager.capturePaneHistory(session: sessionName)
+                    DispatchQueue.main.async { [weak coordinator] in
+                        coordinator?.startTmuxClient(
+                            executable: tmuxPath,
+                            args: args,
+                            environment: envPairs,
+                            session: sessionName,
+                            history: history
+                        )
+                    }
+                }
+            }
+
+            // A stalled tmux server must not leave a new terminal blank. In
+            // the normal case the history capture wins this race; otherwise we
+            // start promptly and discard the late snapshot to keep input live.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak coordinator] in
+                coordinator?.startTmuxClient(
+                    executable: tmuxPath,
+                    args: args,
+                    environment: envPairs,
+                    session: sessionName,
+                    history: nil
+                )
             }
         } else {
             // Fallback: plain zsh
@@ -194,7 +175,6 @@ struct TerminalWrapper: NSViewRepresentable {
         context.coordinator.startCwdPolling()
         ShiftEnterMonitor.install()
         CmdBackspaceMonitor.install()
-        CmdCommaMonitor.install()
 
         return termView
     }
@@ -213,6 +193,7 @@ struct TerminalWrapper: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {
+        coordinator.invalidate()
         coordinator.stopCwdPolling()
         TerminalViewRegistry.shared.unregister(id: coordinator.terminalID)
         if coordinator.isTmux {
@@ -231,6 +212,8 @@ struct TerminalWrapper: NSViewRepresentable {
         private var lastKnownCwd: String?
         private var oscWorking = false
         var isTmux = false
+        private var isActive = true
+        private var tmuxLaunchStarted = false
 
         init(terminalID: UUID, initialDirectory: String, onExit: @escaping (Int32) -> Void, onCwdChange: @escaping (String) -> Void) {
             self.terminalID = terminalID
@@ -259,6 +242,105 @@ struct TerminalWrapper: NSViewRepresentable {
             DispatchQueue.main.async { [self] in
                 onExit(exitCode ?? -1)
             }
+        }
+
+        func invalidate() {
+            isActive = false
+        }
+
+        /// Restore retained tmux history into SwiftTerm's normal buffer before
+        /// the client attaches. The client then redraws only the current pane,
+        /// leaving the restored history available to native trackpad scrolling.
+        func startTmuxClient(
+            executable: String,
+            args: [String],
+            environment: [String],
+            session: String,
+            history: Data?
+        ) {
+            guard isActive,
+                  !tmuxLaunchStarted,
+                  let termView,
+                  let registeredView = TerminalViewRegistry.shared.view(for: terminalID),
+                  registeredView === termView else {
+                return
+            }
+            tmuxLaunchStarted = true
+
+            let launchProcess = { [weak self, weak termView] in
+                guard let self,
+                      self.isActive,
+                      let termView,
+                      let registeredView = TerminalViewRegistry.shared.view(for: self.terminalID),
+                      registeredView === termView else {
+                    return
+                }
+                termView.startProcess(
+                    executable: executable,
+                    args: args,
+                    environment: environment,
+                    execName: "tmux"
+                )
+                DispatchQueue.global(qos: .userInitiated).async {
+                    TmuxManager.configureSession(session)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self, weak termView] in
+                    guard let self,
+                          self.isActive,
+                          let termView,
+                          let registeredView = TerminalViewRegistry.shared.view(for: self.terminalID),
+                          registeredView === termView else {
+                        return
+                    }
+                    termView.send(data: ArraySlice<UInt8>([0x0c])) // Ctrl+L
+                }
+            }
+
+            guard let history, !history.isEmpty else {
+                launchProcess()
+                return
+            }
+            hydrate(history: history, into: termView, then: launchProcess)
+        }
+
+        /// tmux capture-pane uses LF-only output. A terminal LF does not reset
+        /// the column, so convert it to CRLF and feed bounded chunks on the
+        /// main run loop rather than blocking interface events on large panes.
+        private func hydrate(history: Data, into termView: LocalProcessTerminalView, then completion: @escaping () -> Void) {
+            var bytes: [UInt8] = []
+            bytes.reserveCapacity(history.count + history.count / 80)
+            var previous: UInt8?
+            for byte in history {
+                if byte == 0x0A, previous != 0x0D {
+                    bytes.append(0x0D)
+                }
+                bytes.append(byte)
+                previous = byte
+            }
+
+            guard !bytes.isEmpty else {
+                completion()
+                return
+            }
+
+            let chunkSize = 16 * 1024
+            var offset = 0
+            func feedNextChunk() {
+                guard isActive,
+                      let registeredView = TerminalViewRegistry.shared.view(for: terminalID),
+                      registeredView === termView else {
+                    return
+                }
+                guard offset < bytes.count else {
+                    completion()
+                    return
+                }
+                let end = min(offset + chunkSize, bytes.count)
+                termView.feed(byteArray: bytes[offset..<end])
+                offset = end
+                DispatchQueue.main.async(execute: feedNextChunk)
+            }
+            feedNextChunk()
         }
 
         func startCwdPolling() {

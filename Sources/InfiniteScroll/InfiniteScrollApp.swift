@@ -9,10 +9,10 @@ struct InfiniteScrollApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
-                .frame(minWidth: 1200, minHeight: 600)
+                .frame(minWidth: 640, minHeight: 420)
         }
         .windowStyle(.titleBar)
-        .defaultSize(width: 1800, height: 900)
+        .defaultSize(width: 1280, height: 800)
         .commands {
             // Cmd+W: close current cell
             CommandGroup(replacing: .saveItem) {
@@ -28,13 +28,30 @@ struct InfiniteScrollApp: App {
                 }
                 .keyboardShortcut("d", modifiers: .command)
 
+                // Cmd+Shift+Up: new row above
+                Button("New Row Above") {
+                    store.addPanelAbove()
+                }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .shift])
+
                 // Cmd+Shift+Down: new row below
                 Button("New Row Below") {
                     store.addPanel()
                 }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .shift])
+
+                Button("Rename Current Row") {
+                    store.renameCurrentRow()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
             }
             CommandGroup(after: .pasteboard) {
+                Divider()
+                Button("Find in Workspace…") {
+                    store.toggleWorkspaceSearch()
+                }
+                .keyboardShortcut("f", modifiers: .command)
+
                 Divider()
                 Button("Copy CLI Prompt") {
                     CLIPromptCopier.copyToPasteboard()
