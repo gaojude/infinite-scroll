@@ -218,11 +218,10 @@ final class CLIServer {
         case .fail(let msg):
             return .failure(msg)
         case .send(let session):
-            // The pane may be in copy-mode (entered when the user scrolled the
-            // cell back — see CmdScrollView). In copy-mode, `send-keys`
-            // dispatches to the copy-mode key table instead of the shell, so
-            // the input would be silently dropped. `-X cancel` exits copy-mode
-            // and is a no-op when the pane isn't in it.
+            // A pane can be in tmux copy-mode (for example, from its own key
+            // bindings). In that state `send-keys` dispatches to the copy-mode
+            // key table instead of the shell, so cancel it first. `-X cancel`
+            // is a no-op when the pane is not in copy-mode.
             _ = TmuxManager.run(["send-keys", "-t", session, "-X", "cancel"])
             if let keys = req.keys, !keys.isEmpty {
                 TmuxManager.sendKeys(session, keys: keys)
@@ -304,7 +303,7 @@ final class CLIServer {
             if let row = req.row, let resolved = store.resolveRow(row) {
                 rowIdx = resolved
             } else {
-                rowIdx = max(store.focusedRow, 1)
+                rowIdx = store.focusedRow
             }
             // Master row is off-limits to the CLI.
             if store.isMasterCell(rowIdx: rowIdx, cellIdx: 0) {
@@ -370,22 +369,9 @@ private enum SendPlan {
 
 enum TmuxCapture {
     static func capture(session: String, scrollback: Int?) -> String {
-        guard let tmux = TmuxManager.cachedTmuxPath() ?? TmuxManager.findTmux() else { return "" }
-        var args = ["capture-pane", "-p", "-t", session]
-        if let n = scrollback, n > 0 {
-            args += ["-S", "-\(n)"]
+        guard let data = TmuxManager.capturePane(session: session, scrollback: scrollback) else {
+            return ""
         }
-        let task = Process()
-        let pipe = Pipe()
-        task.executableURL = URL(fileURLWithPath: tmux)
-        task.arguments = args
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch { return "" }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8) ?? ""
     }
 }
