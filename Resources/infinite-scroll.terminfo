@@ -1,0 +1,10 @@
+# xterm-256color capabilities for the embedded SwiftTerm view.
+#
+# tmux uses smcup/rmcup to switch its *client* into an alternate screen. That
+# screen deliberately has no scrollback, so a native trackpad gesture can only
+# become tmux copy-mode. The embedded view owns its scrollback instead, so the
+# client terminal intentionally omits those two capabilities.
+infinite-scroll|Infinite Scroll embedded terminal,
+	use=xterm-256color,
+	smcup@,
+	rmcup@,

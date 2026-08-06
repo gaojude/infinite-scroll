@@ -6,6 +6,9 @@ import SwiftTerm
 
 class CmdNSScrollView: NSScrollView {
     private var eventMonitor: Any?
+    private weak var preciseScrollTarget: LocalProcessTerminalView?
+    private var preciseScrollRemainder: CGFloat = 0
+    private let pointsPerTerminalLine: CGFloat = 12
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -36,32 +39,7 @@ class CmdNSScrollView: NSScrollView {
                 var current: NSView? = hitView
                 while let view = current {
                     if let termView = view as? LocalProcessTerminalView {
-                        let delta = event.scrollingDeltaY
-                        if delta == 0 { return nil }
-
-                        if let session = TerminalViewRegistry.shared.tmuxSession(for: termView) {
-                            // tmux-backed: use tmux copy-mode scrolling.
-                            // TODO(ux): scrolling enters tmux copy-mode, so the user
-                            // must press Esc before typing again. Making any key
-                            // cancel-and-forward requires either a custom copy-mode
-                            // key table (overhauls tmux's bindings) or a per-cell
-                            // "scrolled" flag + AppKit key monitor that prepends
-                            // `send-keys -X cancel`. Skipped per task 5.2; the CLI
-                            // silent-drop path is handled in CLIServer's send handler.
-                            let lineHeight: CGFloat = 16
-                            let lines = max(1, Int(abs(delta) / lineHeight))
-                            let cmd = delta > 0 ? "scroll-up" : "scroll-down"
-
-                            DispatchQueue.global(qos: .userInteractive).async {
-                                TmuxManager.run(["copy-mode", "-t", session])
-                                for _ in 0..<lines {
-                                    TmuxManager.run(["send-keys", "-t", session, "-X", cmd])
-                                }
-                            }
-                        } else {
-                            // No tmux — use SwiftTerm's own scrollback buffer
-                            termView.scrollWheel(with: event)
-                        }
+                        self.scrollTerminal(termView, with: event)
                         return nil
                     }
                     current = view.superview
@@ -83,6 +61,51 @@ class CmdNSScrollView: NSScrollView {
     // This override prevents NSScrollView from scrolling its content on any stray events.
     override func scrollWheel(with event: NSEvent) {
         // no-op — monitor handles everything
+    }
+
+    /// AppKit reports trackpad scrolling in precise point deltas. Accumulate
+    /// those deltas before advancing SwiftTerm by a row so one gesture does
+    /// not cause a redraw for every tiny hardware event.
+    private func scrollTerminal(_ termView: LocalProcessTerminalView, with event: NSEvent) {
+        let delta = event.scrollingDeltaY
+        guard delta != 0 else { return }
+
+        let lines: Int
+        if event.hasPreciseScrollingDeltas {
+            if preciseScrollTarget !== termView ||
+                (preciseScrollRemainder > 0 && delta < 0) ||
+                (preciseScrollRemainder < 0 && delta > 0) {
+                preciseScrollRemainder = 0
+            }
+            preciseScrollTarget = termView
+            preciseScrollRemainder += delta
+            lines = Int(abs(preciseScrollRemainder) / pointsPerTerminalLine)
+            guard lines > 0 else { return }
+            preciseScrollRemainder -= CGFloat(lines) * (delta > 0 ? pointsPerTerminalLine : -pointsPerTerminalLine)
+        } else {
+            preciseScrollTarget = nil
+            preciseScrollRemainder = 0
+            lines = scrollWheelLines(for: delta)
+        }
+
+        if delta > 0 {
+            termView.scrollUp(lines: lines)
+        } else {
+            termView.scrollDown(lines: lines)
+        }
+    }
+
+    private func scrollWheelLines(for delta: CGFloat) -> Int {
+        switch abs(delta) {
+        case 10...:
+            return 20
+        case 6...:
+            return 10
+        case 2...:
+            return 3
+        default:
+            return 1
+        }
     }
 }
 

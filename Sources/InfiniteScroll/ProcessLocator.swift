@@ -17,7 +17,7 @@ enum ProcessLocator {
         // protocol (CSI-u). SwiftTerm + our ShiftEnterMonitor handle the actual sequences.
         env["TERM_PROGRAM"] = "iTerm.app"
         env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
-        // Ensure terminfo database is found (needed for bundled tmux)
+        // Ensure terminfo database is found (needed for bundled tmux).
         if env["TERMINFO_DIRS"] == nil {
             let terminfoDirs = [
                 "/usr/share/terminfo",
@@ -25,6 +25,19 @@ enum ProcessLocator {
                 "\(NSHomeDirectory())/.terminfo",
             ]
             env["TERMINFO_DIRS"] = terminfoDirs.joined(separator: ":")
+        }
+
+        // tmux consults the client's terminfo entry when it attaches. The
+        // embedded SwiftTerm view owns the scrollback, so use the bundled
+        // entry that intentionally omits alternate-screen capabilities. Keep
+        // all normal terminfo directories available for programs inside tmux.
+        if let resourceURL = Bundle.main.resourceURL?
+            .appendingPathComponent("terminfo", isDirectory: true),
+           FileManager.default.fileExists(atPath: resourceURL.path) {
+            env["TERM"] = "infinite-scroll"
+            env.removeValue(forKey: "TERMINFO")
+            let inheritedDirectories = env["TERMINFO_DIRS"].map { ":\($0)" } ?? ""
+            env["TERMINFO_DIRS"] = "\(resourceURL.path)\(inheritedDirectories):"
         }
         return env
     }

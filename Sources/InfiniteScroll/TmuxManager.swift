@@ -2,6 +2,9 @@ import Foundation
 
 enum TmuxManager {
     static let prefix = "is-"
+    /// Native and tmux scrollback use one bounded limit. A finite buffer keeps
+    /// long-running Codex sessions scrollable without unbounded memory growth.
+    static let historyLimit = 10_000
     private static let cacheLock = NSLock()
     private static var _cachedPath: String?
     private static var _checked = false
@@ -36,17 +39,18 @@ enum TmuxManager {
         }
         cacheLock.unlock()
 
-        let candidates = [
+        let systemCandidates = [
             "/opt/homebrew/bin/tmux",
             "/usr/local/bin/tmux",
             "/usr/bin/tmux",
         ]
-        var searchPaths = candidates
+        var searchPaths: [String] = []
         if let bundlePath = Bundle.main.executableURL?
             .deletingLastPathComponent()
             .appendingPathComponent("tmux").path {
             searchPaths.append(bundlePath)
         }
+        searchPaths.append(contentsOf: systemCandidates)
 
         var resolved: String?
         for path in searchPaths {
@@ -148,6 +152,51 @@ enum TmuxManager {
         return output
     }
 
+    /// Capture a pane's visible contents plus, when requested, its retained
+    /// scrollback. This must run off the main thread because it launches tmux
+    /// and waits for its output.
+    static func capturePane(session: String, scrollback: Int? = nil) -> Data? {
+        let startLine = scrollback.flatMap { $0 > 0 ? "-\($0)" : nil }
+        return capturePane(session: session, startLine: startLine, endLine: nil)
+    }
+
+    /// Capture only the history portion of a pane. Line zero is the top of the
+    /// visible pane in tmux, so ending at -1 deliberately leaves the current
+    /// screen for the attaching client to redraw instead of duplicating it.
+    static func capturePaneHistory(session: String, limit: Int = historyLimit) -> Data? {
+        guard limit > 0 else { return nil }
+        return capturePane(session: session, startLine: "-\(limit)", endLine: "-1")
+    }
+
+    private static func capturePane(session: String, startLine: String?, endLine: String?) -> Data? {
+        guard let tmux = findTmux() else { return nil }
+        var args = ["capture-pane", "-p", "-t", session]
+        if let startLine {
+            args += ["-S", startLine]
+        }
+        if let endLine {
+            args += ["-E", endLine]
+        }
+
+        let task = Process()
+        let pipe = Pipe()
+        task.executableURL = URL(fileURLWithPath: tmux)
+        task.arguments = args
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            // Read before waiting so a large scrollback cannot fill the pipe
+            // and deadlock the child process.
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            task.waitUntilExit()
+            guard task.terminationStatus == 0, !data.isEmpty else { return nil }
+            return data
+        } catch {
+            return nil
+        }
+    }
+
     /// Run a tmux command (fire-and-forget)
     @discardableResult
     static func run(_ args: [String]) -> Bool {
@@ -166,15 +215,45 @@ enum TmuxManager {
 
     private static var _configuredGlobals = false
 
-    /// Configure global tmux settings (mouse, extended keys). Idempotent.
+    /// Configure global tmux input settings. Mouse handling is configured per
+    /// Infinite Scroll session so unrelated tmux sessions keep their own setup.
     static func configureGlobals() {
         guard !_configuredGlobals else { return }
         _configuredGlobals = true
-        run(["set-option", "-g", "mouse", "on"])
         run(["set-option", "-g", "extended-keys", "on"])
         run(["set-option", "-g", "extended-keys-format", "csi-u"])
         // Propagate TERM_PROGRAM into sessions on (re)attach
         run(["set-option", "-g", "update-environment", "TERM_PROGRAM"])
+    }
+
+    /// Keep app-managed panes in SwiftTerm's local scrollback and remove tmux
+    /// chrome that is not useful inside the app. These are session options, so
+    /// they do not alter the user's other tmux sessions.
+    static func configureSession(_ session: String) {
+        // LocalProcessTerminalView starts `tmux new-session` asynchronously.
+        // Wait briefly for a newly-created session so it cannot miss this
+        // configuration and inherit an older global `mouse on` setting.
+        for attempt in 0..<20 {
+            if configureExistingSession(session) {
+                return
+            }
+            if attempt < 19 {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+        }
+    }
+
+    /// Apply pane settings immediately when reattaching to a session that
+    /// already exists. Returns false for new sessions so callers can avoid the
+    /// retry loop used by `configureSession`.
+    @discardableResult
+    static func configureExistingSession(_ session: String) -> Bool {
+        guard sessionExists(session) else { return false }
+        _ = run(["set-option", "-q", "-t", session, "history-limit", "\(historyLimit)"])
+        _ = run(["set-option", "-q", "-t", session, "mouse", "off"])
+        _ = run(["set-option", "-q", "-t", session, "status", "off"])
+        _ = run(["send-keys", "-t", session, "-X", "cancel"])
+        return true
     }
 
     /// Send literal keys into a tmux pane, bypassing tmux's input parsing.
